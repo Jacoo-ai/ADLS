@@ -1,0 +1,10 @@
+{"trial": 0, "accuracy": 0.822, "params": {"num_layers": 2, "num_heads": 4, "hidden_size": 192, "intermediate_size": 512, "linear_layer_type": "linear"}, "compression": true, "post_training": false}
+{"trial": 1, "accuracy": 0.7684, "params": {"num_layers": 2, "num_heads": 4, "hidden_size": 128, "intermediate_size": 768, "linear_layer_type": "identity"}, "compression": true, "post_training": false}
+{"trial": 2, "accuracy": 0.75712, "params": {"num_layers": 2, "num_heads": 4, "hidden_size": 128, "intermediate_size": 768, "linear_layer_type": "identity"}, "compression": true, "post_training": false}
+{"trial": 3, "accuracy": 0.75964, "params": {"num_layers": 4, "num_heads": 2, "hidden_size": 128, "intermediate_size": 768, "linear_layer_type": "linear"}, "compression": true, "post_training": false}
+{"trial": 4, "accuracy": 0.73336, "params": {"num_layers": 2, "num_heads": 4, "hidden_size": 128, "intermediate_size": 512, "linear_layer_type": "linear"}, "compression": true, "post_training": false}
+{"trial": 5, "accuracy": 0.71276, "params": {"num_layers": 2, "num_heads": 2, "hidden_size": 128, "intermediate_size": 512, "linear_layer_type": "identity"}, "compression": true, "post_training": false}
+{"trial": 6, "accuracy": 0.73624, "params": {"num_layers": 4, "num_heads": 2, "hidden_size": 128, "intermediate_size": 512, "linear_layer_type": "linear"}, "compression": true, "post_training": false}
+{"trial": 7, "accuracy": 0.79192, "params": {"num_layers": 2, "num_heads": 2, "hidden_size": 192, "intermediate_size": 512, "linear_layer_type": "linear"}, "compression": true, "post_training": false}
+{"trial": 8, "accuracy": 0.70168, "params": {"num_layers": 2, "num_heads": 4, "hidden_size": 192, "intermediate_size": 768, "linear_layer_type": "identity"}, "compression": true, "post_training": false}
+{"trial": 9, "accuracy": 0.74868, "params": {"num_layers": 4, "num_heads": 2, "hidden_size": 192, "intermediate_size": 768, "linear_layer_type": "identity"}, "compression": true, "post_training": false}

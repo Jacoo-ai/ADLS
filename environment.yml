@@ -1,0 +1,8 @@
+name: mase
+
+channels:
+  - symbiflow
+
+dependencies:
+  - python=3.11.4
+  - pip

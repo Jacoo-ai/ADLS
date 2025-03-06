@@ -1,0 +1,7 @@
+# Perform the pruning step for LUTNet
+[passes.prune.weight]
+method = "level-pruner"
+criterion = "l1"
+
+[passes.prune.weight.sparsity]
+"seq_blocks.12" = 0.06

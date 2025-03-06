@@ -1,0 +1,39 @@
+# no add
+[default]
+bias_frac_width = 5
+bias_width = 8
+data_in_frac_width = 5
+data_in_width = 8
+name = "integer"
+weight_frac_width = 3
+weight_width = 8
+
+[module_classes_to_modify.conv1d]
+name = "default"
+
+[module_classes_to_modify.conv2d]
+name = "default"
+
+[module_classes_to_modify.linear]
+name = "default"
+
+[module_classes_to_modify.relu]
+name = "default"
+
+[function_classes_to_modify.bmm]
+name = "default"
+
+[function_classes_to_modify.matmul]
+name = "default"
+
+[function_classes_to_modify.relu]
+name = "default"
+
+[method_classes_to_modify.bmm]
+name = "default"
+
+[method_classes_to_modify.matmul]
+name = "default"
+
+[method_classes_to_modify.relu]
+name = "default"

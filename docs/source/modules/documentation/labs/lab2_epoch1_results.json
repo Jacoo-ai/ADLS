@@ -1,0 +1,4 @@
+{"trial": 0, "accuracy": 0.84272, "params": {"num_layers": 2, "num_heads": 2, "hidden_size": 128, "intermediate_size": 512, "linear_layer_type": "linear"}}
+{"trial": 0, "accuracy": 0.87892, "params": {"num_layers": 2, "num_heads": 2, "hidden_size": 128, "intermediate_size": 512, "linear_layer_type": "linear"}}
+{"trial": 0, "accuracy": 0.86252, "params": {"num_layers": 2, "num_heads": 2, "hidden_size": 128, "intermediate_size": 512, "linear_layer_type": "identity"}}
+{"trial": 0, "accuracy": 0.87892, "params": {"num_layers": 2, "num_heads": 2, "hidden_size": 128, "intermediate_size": 512, "linear_layer_type": "identity"}}

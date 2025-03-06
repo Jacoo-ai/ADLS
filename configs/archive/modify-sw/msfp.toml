@@ -1,0 +1,57 @@
+[default]
+name = "msfp"
+# *: MSFP12 weight: 8-bit exponent, 1-bit sign, 3 bit mantissa
+# weight shape = [in_features, out_features]
+weight_exponent_bias = 127
+weight_exponent_width = 8
+weight_width = 4
+# *： MSFP12 activation
+# weight shape = [in_features, out_features]
+data_in_exponent_bias = 127
+data_in_exponent_width = 8
+data_in_width = 4
+weight_block_size = [1, 16]
+# data_in shape = [bz, in_features]
+data_in_block_size = [1, 16]
+# *: MSFP12 bias
+bias_exponent_bias = 127
+bias_exponent_width = 8
+bias_width = 4
+# bias shape = [1, output_features]
+bias_block_size = [16]
+
+[module_classes_to_modify.conv1d]
+name = "default"
+
+[module_classes_to_modify.conv2d]
+name = "default"
+
+[module_classes_to_modify.linear]
+name = "default"
+
+[module_classes_to_modify.relu]
+name = "default"
+
+[function_classes_to_modify.add]
+name = "default"
+
+[function_classes_to_modify.bmm]
+name = "default"
+
+[function_classes_to_modify.matmul]
+name = "default"
+
+[function_classes_to_modify.relu]
+name = "default"
+
+[method_classes_to_modify.add]
+name = "default"
+
+[method_classes_to_modify.bmm]
+name = "default"
+
+[method_classes_to_modify.matmul]
+name = "default"
+
+[method_classes_to_modify.relu]
+name = "default"
