@@ -285,20 +285,14 @@ class FakeQuantizer:
             return graph
 
         for node in graph.fx_graph.nodes:
-            op = get_mase_op(node)
-            print(f"op is {op}")
             if get_mase_op(node) not in QUANTIZEABLE_OP:
-                print(f'{op} not in QUANTIZEABLE_OP')
                 continue
             node_config = self.get_config(get_mase_op(node))
             if not node_config["config"]["quantize"]:
-                print("not config quantize")
                 continue
             if not node_config["config"]["precision"] == "int8":
-                print("not int8")
                 continue
             if node.op == "call_module":
-                print("node.op == call_module")
                 original_module = get_node_actual_target(node)
                 new_module = self.create_quantized_module(
                     get_mase_op(node),

@@ -124,6 +124,113 @@ else:
             """Applies quantization procedures to PyTorch graph based on type."""
             # Add quantization code here
 
+        # def ONNX_to_TRT(self, ONNX_path):
+        #     self.logger.info("Converting PyTorch model to TensorRT...")
+
+        #     # Check for layer wise mixed precision
+        #     layer_wise_mixed_precision = (
+        #         True
+        #         if check_for_value_in_dict(self.config, "int8")
+        #         and check_for_value_in_dict(self.config, "fp16")
+        #         else False
+        #     )
+
+        #     TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
+        #     builder = trt.Builder(TRT_LOGGER)
+        #     network = builder.create_network(
+        #         1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+        #     )
+        #     parser = trt.OnnxParser(network, TRT_LOGGER)
+
+        #     with open(ONNX_path, "rb") as model:
+        #         if not parser.parse(model.read()):
+        #             for error in range(parser.num_errors):
+        #                 self.logger.error(parser.get_error(error))
+        #             raise Exception("Failed to parse the ONNX file.")
+
+        #     # Create the config object here
+        #     config = builder.create_builder_config()
+        #     # config.max_workspace_size = 4 << 30  # 4GB
+        #     config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 4 << 30)  # new tensorrt version
+
+        #     default_precision = self.config["default"]["config"]["precision"]
+
+        #     # This section may be uncommented if pytorch-quantization is not used for int8 Calibration
+        #     """
+        #     # Only required if pytorch-quantization is not used
+        #     config.set_flag(trt.BuilderFlag.INT8)
+        #     if default_precision == 'int8':
+        #         config.int8_calibrator = Int8Calibrator(
+        #             self.config['num_calibration_batches'],
+        #             self.config['data_module'].train_dataloader(),
+        #             prepare_save_path(self.config, method='cache', suffix='cache')
+        #             )
+        #     """
+
+        #     # Only quantize and calibrate non int8 pytorch-quantization
+        #     if default_precision != "int8":
+        #         config.set_flag(trt.BuilderFlag.PREFER_PRECISION_CONSTRAINTS)
+        #         config.set_flag(trt.BuilderFlag.DIRECT_IO)
+        #         config.set_flag(trt.BuilderFlag.REJECT_EMPTY_ALGORITHMS)
+        #         # config.set_flag(trt.BuilderFlag.STRICT_TYPES)  # [DEPRECATED] Enables strict type constraints. Equivalent to setting PREFER_PRECISION_CONSTRAINTS, DIRECT_IO, and REJECT_EMPTY_ALGORITHMS.
+
+        #     if default_precision == "fp16" and not layer_wise_mixed_precision:
+        #         config.set_flag(trt.BuilderFlag.FP16)
+
+        #     elif layer_wise_mixed_precision:
+        #         # Now, iterate over the network layers and set precision as per the config
+        #         for idx in range(network.num_layers):
+        #             layer = network.get_layer(idx)
+        #             layer_key = f"feature_layers_{idx}"
+        #             layer_precision = (
+        #                 self.config.get("passes", {})
+        #                 .get("tensorrt", {})
+        #                 .get(layer_key, {})
+        #                 .get("config", {})
+        #                 .get("precision", default_precision)
+        #             )
+
+        #             # Apply precision settings based on the layer_precision value
+        #             if layer_precision == "fp16":
+        #                 layer.precision = trt.float16
+        #                 layer.set_output_type(0, trt.DataType.HALF)
+        #             elif layer_precision == "int8":
+        #                 layer.precision = trt.int8
+        #                 layer.set_output_type(0, trt.DataType.INT8)
+        #             else:
+        #                 # You might want to handle the default case or unsupported precision types differently
+        #                 print(
+        #                     f"Warning: Unsupported precision type '{layer_precision}' for layer {idx}. Defaulting to fp16."
+        #                 )
+        #                 layer.precision = trt.float16
+        #                 layer.set_output_type(0, trt.DataType.HALF)
+
+        #     serialized_engine = builder.build_serialized_network(network, config)
+        #     if serialized_engine is None:
+        #         raise Exception(
+        #             "Failed to build serialized network. A builderflag or config parameter may be incorrect or the ONNX model is unsupported."
+        #         )
+
+        #     trt_path = prepare_save_path(self.config, method="trt", suffix="trt")
+        #     with open(trt_path, "wb") as f:
+        #         f.write(serialized_engine)
+
+        #     # Optimization profiles are needed for dynamic input shapes.
+        #     profile = builder.create_optimization_profile()
+        #     inputTensor = network.get_input(0)
+        #     profile.set_shape(
+        #         inputTensor.name,
+        #         (1,) + inputTensor.shape[1:],
+        #         (8,) + inputTensor.shape[1:],
+        #         (32,) + inputTensor.shape[1:],
+        #     )
+        #     config.add_optimization_profile(profile)
+
+        #     self.logger.info(
+        #         f"TensorRT Conversion Complete. Stored trt model to {trt_path}"
+        #     )
+        #     return trt_path
+
         def ONNX_to_TRT(self, ONNX_path):
             self.logger.info("Converting PyTorch model to TensorRT...")
 
@@ -142,43 +249,40 @@ else:
             )
             parser = trt.OnnxParser(network, TRT_LOGGER)
 
-            with open(ONNX_path, "rb") as model:
-                if not parser.parse(model.read()):
+            with open(ONNX_path, "rb") as model_file:
+                if not parser.parse(model_file.read()):
                     for error in range(parser.num_errors):
                         self.logger.error(parser.get_error(error))
                     raise Exception("Failed to parse the ONNX file.")
 
-            # Create the config object here
+            # Create the builder configuration
             config = builder.create_builder_config()
-            # config.max_workspace_size = 4 << 30  # 4GB
-            config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 4 << 30)  # new tensorrt version
+            config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 4 << 30)  # 4GB
 
             default_precision = self.config["default"]["config"]["precision"]
 
-            # This section may be uncommented if pytorch-quantization is not used for int8 Calibration
-            """
-            # Only required if pytorch-quantization is not used
-            config.set_flag(trt.BuilderFlag.INT8)
-            if default_precision == 'int8':
-                config.int8_calibrator = Int8Calibrator(
-                    self.config['num_calibration_batches'],
-                    self.config['data_module'].train_dataloader(),
-                    prepare_save_path(self.config, method='cache', suffix='cache')
-                    )
-            """
-
-            # Only quantize and calibrate non int8 pytorch-quantization
-            if default_precision != "int8":
+            if default_precision == "int8":
+                config.set_flag(trt.BuilderFlag.INT8)
+                # 获取校准批次数，若未配置则默认10
+                num_calibration_batches = self.config.get("num_calibration_batches", 10)
+                # data_module 应该已通过 pass_args 注入到 self.config 中
+                if "data_module" not in self.config:
+                    raise Exception("data_module not found in configuration for INT8 calibration.")
+                calibrator = Int8Calibrator(
+                    num_calibration_batches,
+                    self.config["data_module"].train_dataloader(),
+                    prepare_save_path(self.config, method="cache", suffix="cache")
+                )
+                config.int8_calibrator = calibrator
+                self.logger.info("INT8 flag set for TensorRT builder with calibrator.")
+            else:
                 config.set_flag(trt.BuilderFlag.PREFER_PRECISION_CONSTRAINTS)
                 config.set_flag(trt.BuilderFlag.DIRECT_IO)
                 config.set_flag(trt.BuilderFlag.REJECT_EMPTY_ALGORITHMS)
-                # config.set_flag(trt.BuilderFlag.STRICT_TYPES)  # [DEPRECATED] Enables strict type constraints. Equivalent to setting PREFER_PRECISION_CONSTRAINTS, DIRECT_IO, and REJECT_EMPTY_ALGORITHMS.
 
             if default_precision == "fp16" and not layer_wise_mixed_precision:
                 config.set_flag(trt.BuilderFlag.FP16)
-
             elif layer_wise_mixed_precision:
-                # Now, iterate over the network layers and set precision as per the config
                 for idx in range(network.num_layers):
                     layer = network.get_layer(idx)
                     layer_key = f"feature_layers_{idx}"
@@ -189,8 +293,6 @@ else:
                         .get("config", {})
                         .get("precision", default_precision)
                     )
-
-                    # Apply precision settings based on the layer_precision value
                     if layer_precision == "fp16":
                         layer.precision = trt.float16
                         layer.set_output_type(0, trt.DataType.HALF)
@@ -198,9 +300,8 @@ else:
                         layer.precision = trt.int8
                         layer.set_output_type(0, trt.DataType.INT8)
                     else:
-                        # You might want to handle the default case or unsupported precision types differently
-                        print(
-                            f"Warning: Unsupported precision type '{layer_precision}' for layer {idx}. Defaulting to fp16."
+                        self.logger.warning(
+                            f"Unsupported precision '{layer_precision}' for layer {idx}. Defaulting to fp16."
                         )
                         layer.precision = trt.float16
                         layer.set_output_type(0, trt.DataType.HALF)
@@ -220,16 +321,16 @@ else:
             inputTensor = network.get_input(0)
             profile.set_shape(
                 inputTensor.name,
-                (1,) + inputTensor.shape[1:],
-                (8,) + inputTensor.shape[1:],
-                (32,) + inputTensor.shape[1:],
+                (1,) + tuple(inputTensor.shape[1:]),
+                (8,) + tuple(inputTensor.shape[1:]),
+                (32,) + tuple(inputTensor.shape[1:]),
             )
             config.add_optimization_profile(profile)
 
-            self.logger.info(
-                f"TensorRT Conversion Complete. Stored trt model to {trt_path}"
-            )
+            self.logger.info(f"TensorRT Conversion Complete. Stored trt model to {trt_path}")
             return trt_path
+
+
 
         def pytorch_to_ONNX(self, model):
             """Converts PyTorch model to ONNX format and saves it."""
