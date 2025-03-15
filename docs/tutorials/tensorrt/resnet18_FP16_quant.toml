@@ -1,0 +1,45 @@
+# basics
+model = "resnet18"
+dataset = "cifar10"
+
+# 如果有预训练 checkpoint，可取消下面两行注释
+# load_name = "../mase_output/jsc-toy_cls_jsc-pre-trained/best.ckpt"
+# load_type = "pl"
+
+max_epochs = 10
+batch_size = 64
+learning_rate = 1e-3
+accelerator = "gpu"
+task = "cls"
+
+[transform]
+    style = "graph"
+
+[passes.tensorrt]
+    by = "type"
+    # 对于 FP16 模式，校准数据不需要，因此可将采样批次数设为 0
+    num_calibration_batches = 0
+    post_calibration_analysis = false
+
+    [passes.tensorrt.default.config]
+        # FP16 模式下不需要 fake quantization（量化感知训练），直接转换为 FP16 精度即可
+        quantize = false
+        precision = 'fp16'
+
+[passes.tensorrt.fine_tune]
+    # FP16 模式下通常不进行量化感知训练
+    fine_tune = false
+
+[passes.tensorrt.default.input]
+    # 这些参数在 FP16 模式下无实际作用，可保持默认
+    calibrator = 'histogram'
+    quantize_axis = false
+
+[passes.tensorrt.default.weight]
+    calibrator = 'histogram'
+    quantize_axis = false
+
+[passes.tensorrt.runtime_analysis]
+    num_batches = 500
+    num_GPU_warmup_batches = 5
+    test = true

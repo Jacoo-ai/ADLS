@@ -1,0 +1,46 @@
+# basics
+model = "resnet18"
+dataset = "cifar10"
+
+# load_name = "../mase_output/jsc-toy_cls_jsc-pre-trained/best.ckpt"
+# load_type = "pl"
+
+max_epochs = 10
+batch_size = 64
+learning_rate = 1e-3
+accelerator = "gpu"
+task = "cls"
+# num_workers = 0
+
+[transform]
+    style = "graph"
+
+[passes.tensorrt]
+    by = "type"
+    # FP32 模式下不需要校准数据，因此设置为 0，关闭后续校准分析
+    num_calibration_batches = 0
+    post_calibration_analysis = false
+
+    [passes.tensorrt.default.config]
+        # FP32 模式下不进行量化处理
+        quantize = false
+        # 设置精度为 FP32 表示不转换为半精度或 INT8
+        precision = "fp32"
+
+[passes.tensorrt.fine_tune]
+    # 不进行量化感知训练
+    fine_tune = false
+
+[passes.tensorrt.default.input]
+    # 这些设置在 FP32 模式下不会实际生效，保持默认即可
+    calibrator = "histogram"
+    quantize_axis = false
+
+[passes.tensorrt.default.weight]
+    calibrator = "histogram"
+    quantize_axis = false
+
+[passes.tensorrt.runtime_analysis]
+    num_batches = 500
+    num_GPU_warmup_batches = 5
+    test = true

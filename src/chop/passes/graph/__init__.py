@@ -150,6 +150,10 @@ if check_dependencies("tensorrt_calibrate_transform_pass"):
     TRANSFORM_PASSES.append("tensorrt_calibrate_transform_pass")
     PASSES["tensorrt_calibrate_transform_pass"] = tensorrt_calibrate_transform_pass
 
+if check_dependencies("tensorrt_calibrate"):
+    TRANSFORM_PASSES.append("tensorrt_calibrate_transform_pass")
+    PASSES["tensorrt_calibrate"] = tensorrt_calibrate_transform_pass
+
 if check_dependencies("tensorrt_fake_quantize_transform_pass"):
     TRANSFORM_PASSES.append("tensorrt_fake_quantize_transform_pass")
     PASSES["tensorrt_fake_quantize_transform_pass"] = (
@@ -159,5 +163,11 @@ if check_dependencies("tensorrt_fake_quantize_transform_pass"):
 if check_dependencies("tensorrt_fine_tune_transform_pass"):
     TRANSFORM_PASSES.append("tensorrt_fine_tune_transform_pass")
     PASSES["tensorrt_fine_tune_transform_pass"] = (
+        tensorrt_fine_tune_transform_pass
+    )
+
+if check_dependencies("tensorrt_fine_tune"):
+    TRANSFORM_PASSES.append("tensorrt_fine_tune")
+    PASSES["tensorrt_fine_tune"] = (
         tensorrt_fine_tune_transform_pass
     )

@@ -24,7 +24,7 @@ task="cls"
         quantize=true
         calibrators=["percentile", "mse", "entropy"]
         percentiles=[99.0, 99.9, 99.99]
-        precision='fp16'
+        precision='fp32'
 
 [passes.tensorrt.fine_tune]
     fine_tune=true

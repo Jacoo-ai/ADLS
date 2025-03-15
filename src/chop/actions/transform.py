@@ -246,70 +246,178 @@ def transform_graph(
         pass_name: str
         pass_config: dict
         match pass_name:
+
             case "tensorrt":
+                # 1) 先把 meta param 里含有的 tensor 转成 numpy，以便后续 pass
                 graph, _ = metadata_value_type_cast_transform_pass(
                     graph, pass_args={"fn": to_numpy_if_tensor}
                 )
+
+                # 2) 备份一下原图，若你还想对比 PyTorch 原始模型的推理
                 ori_graph = deepcopy_mase_graph(graph)
                 pass_save_dir = save_dir / "tensorrt"
 
+                # 3) 将配置里的一些信息补充到 pass_config
                 pass_config["task"] = task
                 pass_config["dataset"] = config["dataset"]
                 pass_config["batch_size"] = config["batch_size"]
                 pass_config["model"] = config["model"]
                 pass_config["data_module"] = data_module
                 pass_config["accelerator"] = accelerator.type
+
                 if accelerator.type == "cuda":
-                    # TODO this seems innefective - known issue - https://github.com/NVIDIA/TensorRT/issues/2468
+                    # 对 CUDA 生效的懒加载
                     os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
-                # Firstly fake quantize the model for calibration (only if using int8 precision otherwise skipped)
-                graph, _ = PASSES["tensorrt_fake_quantize_transform_pass"](
-                    graph, pass_args=pass_config
-                )
+                # 4) 根据 TOML 中的 precision 判断是否 int8
+                precision = config["passes"]["tensorrt"]["default"]["config"].get("precision", "fp16")
 
-                # Summarize to show what has been quantized
-                PASSES["summarize_quantization"](
-                    graph, {"save_dir": pass_save_dir, "original_graph": ori_graph}
-                )
+                if precision == "int8":
+                    # 仅在 int8 模式下执行: fake quantize -> summarize -> calibrate -> fine tune
+                    graph, _ = PASSES["tensorrt_fake_quantize_transform_pass"](graph, pass_args=pass_config)
 
-                # Then calibrate the model using the fake quantization to set AMAXs
-                graph, _ = PASSES["tensorrt_calibrate"](graph, pass_args=pass_config)
+                    PASSES["summarize_quantization"](
+                        graph, {"save_dir": pass_save_dir, "original_graph": ori_graph}
+                    )
 
-                # Apply post-quantization fine tuning (Quantization Aware Training)
-                graph, _ = PASSES["tensorrt_fine_tune"](graph, pass_args=pass_config)
+                    graph, _ = PASSES["tensorrt_calibrate"](graph, pass_args=pass_config)
+                    graph, _ = PASSES["tensorrt_fine_tune"](graph, pass_args=pass_config)
+                else:
+                    logger.info(f"precision={precision}, skipping int8 calibration/fine-tune...")
 
-                # Apply fp16 or layer-wise mixed precision quantization if necessary and convert the model to TensorRT format
-                # graph, runtime_meta = PASSES["tensorrt"](graph, pass_args=pass_config)
+                # 5) 最后统一调用 tensorrt_engine_interface_pass 生成 engine
                 graph, runtime_meta = PASSES["tensorrt_engine_interface_pass"](graph, pass_args=pass_config)
 
+                # 6) 如果想对比原始 PyTorch 性能，可以保留这一步
+                #    但把 warmup batch / num_batches 设置小一些，不要让它干扰太久
+                #    如果完全不需要对比原图，就可以直接删掉
+                short_cfg = pass_config.copy()
+                short_cfg["num_GPU_warmup_batches"] = 0
+                short_cfg["num_batches"] = 1
+                short_cfg["test"] = True  # 还是让它测一下
+                logger.info("Running minimal runtime analysis on original graph (just 1 batch) ...")
+                _, _ = PASSES["runtime_analysis_pass"](ori_graph, pass_args=short_cfg)
+
+                # 7) 对最终生成好的 .trt engine 做“正式”的 warmup + 测速
+                #    这才是真正的“部署后推理”性能
+                deploy_cfg = pass_config.copy()
+                deploy_cfg["num_GPU_warmup_batches"] = 20  # 或者你想要更多
+                deploy_cfg["num_batches"] = 500           # 或者你想要更多
+                deploy_cfg["test"] = True
+
+                logger.info("Measuring final TensorRT engine with warmup=20, test=500 ...")
+                _, _ = PASSES["runtime_analysis_pass"](
+                    runtime_meta["trt_engine_path"], pass_args=deploy_cfg
+                )
+
+            # case "tensorrt":
+            #     # 先做一次将 meta param 里的 tensor 转成 numpy，以便后续 pass
+            #     graph, _ = metadata_value_type_cast_transform_pass(
+            #         graph, pass_args={"fn": to_numpy_if_tensor}
+            #     )
+
+            #     # 备份一下原图做对比
+            #     ori_graph = deepcopy_mase_graph(graph)
+            #     pass_save_dir = save_dir / "tensorrt"
+
+            #     # 将配置里的一些信息补充到 pass_config 里
+            #     pass_config["task"] = task
+            #     pass_config["dataset"] = config["dataset"]
+            #     pass_config["batch_size"] = config["batch_size"]
+            #     pass_config["model"] = config["model"]
+            #     pass_config["data_module"] = data_module
+            #     pass_config["accelerator"] = accelerator.type
+
+            #     if accelerator.type == "cuda":
+            #         # 仅对 CUDA 生效的懒加载
+            #         os.environ["CUDA_MODULE_LOADING"] = "LAZY"
+
+            #     # 根据 TOML 中的 precision 决定走 int8 流程还是 fp16/fp32 流程
+            #     precision = config["passes"]["tensorrt"]["default"]["config"].get("precision", "fp16")
+            #     if precision == "int8":
+            #         # 仅在 int8 模式下执行: fake quantize -> summarize -> calibrate -> fine tune
+            #         graph, _ = PASSES["tensorrt_fake_quantize_transform_pass"](
+            #             graph, pass_args=pass_config
+            #         )
+            #         PASSES["summarize_quantization"](
+            #             graph, {"save_dir": pass_save_dir, "original_graph": ori_graph}
+            #         )
+            #         graph, _ = PASSES["tensorrt_calibrate"](graph, pass_args=pass_config)
+            #         graph, _ = PASSES["tensorrt_fine_tune"](graph, pass_args=pass_config)
+            #     else:
+            #         # 如果不是 int8，就不做上面那几步
+            #         logger.info(f"precision={precision}, skipping int8 calibration/fine-tune...")
+
+            #     # 无论是 fp16 / fp32 还是 int8，最后都要转换成 TensorRT engine
+            #     graph, runtime_meta = PASSES["tensorrt_engine_interface_pass"](graph, pass_args=pass_config)
+
+            #     # 对比原图和转换后图做性能分析
+            #     _, _ = PASSES["runtime_analysis_pass"](ori_graph, pass_args=pass_config)
+            #     _, _ = PASSES["runtime_analysis_pass"](runtime_meta["trt_engine_path"], pass_args=pass_config)
+
+                # graph, _ = metadata_value_type_cast_transform_pass(
+                #     graph, pass_args={"fn": to_numpy_if_tensor}
+                # )
+                # ori_graph = deepcopy_mase_graph(graph)
+                # pass_save_dir = save_dir / "tensorrt"
+
+                # pass_config["task"] = task
+                # pass_config["dataset"] = config["dataset"]
+                # pass_config["batch_size"] = config["batch_size"]
+                # pass_config["model"] = config["model"]
+                # pass_config["data_module"] = data_module
+                # pass_config["accelerator"] = accelerator.type
+                # if accelerator.type == "cuda":
+                #     # TODO this seems innefective - known issue - https://github.com/NVIDIA/TensorRT/issues/2468
+                #     os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
                 # # Firstly fake quantize the model for calibration (only if using int8 precision otherwise skipped)
-                # precision = config["passes"]["tensorrt"]["default"]["config"]["precision"]
-                # if precision == 'int8':
-                #     graph, _ = PASSES["tensorrt_fake_quantize_transform_pass"](
-                #         graph, pass_args=pass_config
-                #     )
-                #     # Summarize to show what has been quantized
-                #     PASSES["summarize_quantization"](
-                #         graph, {"save_dir": pass_save_dir, "original_graph": ori_graph}
-                #     )
-                #     # Then calibrate the model using the fake quantization to set AMAXs
-                #     graph, _ = PASSES["tensorrt_calibrate"](graph, pass_args=pass_config)
-                #     # Apply post-quantization fine tuning (Quantization Aware Training)
-                #     graph, _ = PASSES["tensorrt_fine_tune"](graph, pass_args=pass_config)
-                # else:
-                #     # Apply fp16 or layer-wise mixed precision quantization if necessary and convert the model to TensorRT format
-                #     # graph, runtime_meta = PASSES["tensorrt"](graph, pass_args=pass_config)
-                #     graph, runtime_meta = PASSES["tensorrt_engine_interface_pass"](graph, pass_args=pass_config)
+                # graph, _ = PASSES["tensorrt_fake_quantize_transform_pass"](
+                #     graph, pass_args=pass_config
+                # )
+
+                # # Summarize to show what has been quantized
+                # PASSES["summarize_quantization"](
+                #     graph, {"save_dir": pass_save_dir, "original_graph": ori_graph}
+                # )
+
+                # # Then calibrate the model using the fake quantization to set AMAXs
+                # graph, _ = PASSES["tensorrt_calibrate"](graph, pass_args=pass_config)
+
+                # # Apply post-quantization fine tuning (Quantization Aware Training)
+                # graph, _ = PASSES["tensorrt_fine_tune"](graph, pass_args=pass_config)
+
+                # # Apply fp16 or layer-wise mixed precision quantization if necessary and convert the model to TensorRT format
+                # # graph, runtime_meta = PASSES["tensorrt"](graph, pass_args=pass_config)
+                # graph, runtime_meta = PASSES["tensorrt_engine_interface_pass"](graph, pass_args=pass_config)
+
+
+                # # # Firstly fake quantize the model for calibration (only if using int8 precision otherwise skipped)
+                # # precision = config["passes"]["tensorrt"]["default"]["config"]["precision"]
+                # # if precision == 'int8':
+                # #     graph, _ = PASSES["tensorrt_fake_quantize_transform_pass"](
+                # #         graph, pass_args=pass_config
+                # #     )
+                # #     # Summarize to show what has been quantized
+                # #     PASSES["summarize_quantization"](
+                # #         graph, {"save_dir": pass_save_dir, "original_graph": ori_graph}
+                # #     )
+                # #     # Then calibrate the model using the fake quantization to set AMAXs
+                # #     graph, _ = PASSES["tensorrt_calibrate"](graph, pass_args=pass_config)
+                # #     # Apply post-quantization fine tuning (Quantization Aware Training)
+                # #     graph, _ = PASSES["tensorrt_fine_tune"](graph, pass_args=pass_config)
+                # # else:
+                # #     # Apply fp16 or layer-wise mixed precision quantization if necessary and convert the model to TensorRT format
+                # #     # graph, runtime_meta = PASSES["tensorrt"](graph, pass_args=pass_config)
+                # #     graph, runtime_meta = PASSES["tensorrt_engine_interface_pass"](graph, pass_args=pass_config)
                     
 
-                # Perform runtime analysis on original and new graph
-                _, _ = PASSES["runtime_analysis_pass"](ori_graph, pass_args=pass_config)
+                # # Perform runtime analysis on original and new graph
+                # _, _ = PASSES["runtime_analysis_pass"](ori_graph, pass_args=pass_config)
 
-                _, _ = PASSES["runtime_analysis_pass"](
-                    runtime_meta["trt_engine_path"], pass_args=pass_config
-                )
+                # _, _ = PASSES["runtime_analysis_pass"](
+                #     runtime_meta["trt_engine_path"], pass_args=pass_config
+                # )
 
             case "onnxruntime":
                 pass_save_dir = save_dir / "onnxruntime"

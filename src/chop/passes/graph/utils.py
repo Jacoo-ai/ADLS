@@ -136,16 +136,18 @@ def get_node_target_by_name(graph, request_name):
             return get_node_actual_target(node)
     raise RuntimeError(f"No node named {request_name} found in graph")
 
-# def safe_deepcopy(obj):
-#     """防止拷贝 torch.Tensor 和 CUDA 对象"""
-#     if isinstance(obj, torch.Tensor):
-#         print("avoid copy tensor and cuda")
-#         return obj  # 避免拷贝 tensor
-#     return copy.deepcopy(obj)
-# def deepcopy_mase_graph(mase_graph):
-#     new_graph = copy.copy(mase_graph)  # 使用浅拷贝
-#     new_graph.fx_graph = safe_deepcopy(mase_graph.fx_graph)  # 仅深拷贝计算图
-#     return new_graph
+def safe_deepcopy(obj):
+    """防止拷贝 torch.Tensor 和 CUDA 对象"""
+    if isinstance(obj, torch.Tensor):
+        print("avoid copy tensor and cuda")
+        return obj  # 避免拷贝 tensor
+    return copy.deepcopy(obj)
+
+def deepcopy_mase_graph(mase_graph):
+    print("using safe deepcopy")
+    new_graph = copy.copy(mase_graph)  # 使用浅拷贝
+    new_graph.fx_graph = safe_deepcopy(mase_graph.fx_graph)  # 仅深拷贝计算图
+    return new_graph
 
 # def safe_deepcopy_fx_graph(model):
 #     """安全深拷贝 FX 计算图，避免 Kernel 崩溃"""
@@ -159,11 +161,11 @@ def get_node_target_by_name(graph, request_name):
 #         new_n.meta = dill.loads(dill.dumps(n.meta))
 #     return new_graph
 
-def deepcopy_mase_graph(mase_graph):
-    new_graph = deepcopy(mase_graph)
-    for new_n, n in zip(new_graph.fx_graph.nodes, mase_graph.fx_graph.nodes):
-        new_n.meta = deepcopy(n.meta)
-    return new_graph
+# def deepcopy_mase_graph(mase_graph):
+#     new_graph = deepcopy(mase_graph)
+#     for new_n, n in zip(new_graph.fx_graph.nodes, mase_graph.fx_graph.nodes):
+#         new_n.meta = deepcopy(n.meta)
+#     return new_graph
 
 
 def init_project(project_dir):
