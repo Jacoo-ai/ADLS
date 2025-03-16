@@ -1,0 +1,37 @@
+# basics
+model = "resnet18"
+dataset = "cifar10"
+
+max_epochs = 10
+batch_size = 64
+learning_rate = 1e-3
+accelerator = "gpu"
+task = "cls"
+
+[transform]
+    style = "graph"
+
+[passes.tensorrt]
+    by = "type"
+    num_calibration_batches = 0
+    post_calibration_analysis = false
+
+    [passes.tensorrt.default.config]
+        quantize = false
+        precision = 'fp16'
+
+[passes.tensorrt.fine_tune]
+    fine_tune = false
+
+[passes.tensorrt.default.input]
+    calibrator = 'histogram'
+    quantize_axis = false
+
+[passes.tensorrt.default.weight]
+    calibrator = 'histogram'
+    quantize_axis = false
+
+[passes.tensorrt.runtime_analysis]
+    num_batches = 500
+    num_GPU_warmup_batches = 5
+    test = true

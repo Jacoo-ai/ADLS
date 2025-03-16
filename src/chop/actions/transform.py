@@ -43,10 +43,18 @@ def pre_transform_load(
     Returns:
         _type_: _description_
     """
-    if load_name is not None and load_type in ["pt", "pl"]:
+    # if load_name is not None and load_type in ["pt", "pl","hf"]:
+    #     model = load_model(load_name=load_name, load_type=load_type, model=model)
+    # return model
+    # 当 load_name 非空且 load_type 属于 [pt, pl, mz] 时，检查路径是否存在
+    if load_name is not None and load_type in ["pt", "pl", "mz"]:
+        if not os.path.exists(load_name):
+            raise ValueError(f"file or directory not found: {load_name}")
+        model = load_model(load_name=load_name, load_type=load_type, model=model)
+    # 如果 load_type 是 "hf"，直接调用 load_model（它内部已经根据类型加载 HuggingFace 模型）
+    elif load_name is not None and load_type == "hf":
         model = load_model(load_name=load_name, load_type=load_type, model=model)
     return model
-
 
 def transform(
     model: torch.nn.Module,
@@ -212,12 +220,33 @@ def transform_graph(
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     # concrete forward args for freezing dynamic control flow in forward pass
+    # if "cf_args" not in config:
+    #     cf_args = get_cf_args(model_info=model_info, task=task, model=model)
+    # else:
+    #     cf_args = config["cf_args"]
+    # concrete forward args for freezing dynamic control flow in forward pass
     if "cf_args" not in config:
         cf_args = get_cf_args(model_info=model_info, task=task, model=model)
     else:
         cf_args = config["cf_args"]
 
-    # graph generation
+    # 如果是视觉任务，则覆盖 cf_args，确保使用正确的输入键 "pixel_values"
+    if model_info.task_type == "vision":
+        dummy_in = get_dummy_input(
+            model_info=model_info,
+            data_module=data_module,
+            task=task,
+            device=accelerator,
+        )
+        # 强制只使用 "pixel_values" 这一项，即使 dummy_in 中存在其他键
+        if "pixel_values" in dummy_in:
+            cf_args = {"pixel_values": dummy_in["pixel_values"]}
+        else:
+            # 根据模型预期的尺寸，手动构造一个 dummy tensor
+            cf_args = {"pixel_values": torch.randn(1, 3, 224, 224, device=accelerator)}
+
+
+        # graph generation
     graph = MaseGraph(model=model, cf_args=cf_args)
     # graph_metadata = Mase
     graph, _ = init_metadata_analysis_pass(graph, pass_args=None)
@@ -269,6 +298,15 @@ def transform_graph(
                     # 对 CUDA 生效的懒加载
                     os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
+                short_cfg = pass_config.copy()
+                short_cfg["num_GPU_warmup_batches"] = 0
+                short_cfg["num_batches"] = 1
+                short_cfg["test"] = True  # 还是让它测一下
+                logger.info("Running minimal runtime analysis on original graph (just 1 batch) ...")
+                logger.info(f"Before analyzing original graph: pass_args = {short_cfg}")
+                _, _ = PASSES["runtime_analysis_pass"](ori_graph, pass_args=short_cfg)
+
+
                 # 4) 根据 TOML 中的 precision 判断是否 int8
                 precision = config["passes"]["tensorrt"]["default"]["config"].get("precision", "fp16")
 
@@ -291,12 +329,13 @@ def transform_graph(
                 # 6) 如果想对比原始 PyTorch 性能，可以保留这一步
                 #    但把 warmup batch / num_batches 设置小一些，不要让它干扰太久
                 #    如果完全不需要对比原图，就可以直接删掉
-                short_cfg = pass_config.copy()
-                short_cfg["num_GPU_warmup_batches"] = 0
-                short_cfg["num_batches"] = 1
-                short_cfg["test"] = True  # 还是让它测一下
-                logger.info("Running minimal runtime analysis on original graph (just 1 batch) ...")
-                _, _ = PASSES["runtime_analysis_pass"](ori_graph, pass_args=short_cfg)
+                # short_cfg = pass_config.copy()
+                # short_cfg["num_GPU_warmup_batches"] = 0
+                # short_cfg["num_batches"] = 1
+                # short_cfg["test"] = True  # 还是让它测一下
+                # logger.info("Running minimal runtime analysis on original graph (just 1 batch) ...")
+                # logger.info(f"Before analyzing original graph: pass_args = {short_cfg}")
+                # _, _ = PASSES["runtime_analysis_pass"](ori_graph, pass_args=short_cfg)
 
                 # 7) 对最终生成好的 .trt engine 做“正式”的 warmup + 测速
                 #    这才是真正的“部署后推理”性能
@@ -309,6 +348,10 @@ def transform_graph(
                 _, _ = PASSES["runtime_analysis_pass"](
                     runtime_meta["trt_engine_path"], pass_args=deploy_cfg
                 )
+
+                # engine_context = runtime_meta["trt_engine_path"].create_execution_context()
+                # precision = engine_context.get_binding_dtype(0)  # 读取 TensorRT 推理的精度
+                # print(f"TensorRT performed predision: {precision}")
 
             # case "tensorrt":
             #     # 先做一次将 meta param 里的 tensor 转成 numpy，以便后续 pass
