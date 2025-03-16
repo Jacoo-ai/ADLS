@@ -384,6 +384,17 @@ class ChopCLI:
             "accelerator": self.args.accelerator,
         }
         transform(**transform_params)
+        # # 检查 QuantConv2d 是否真的变成 INT8
+        # for name, module in self.model.named_modules():
+        #     if isinstance(module, torch.nn.quantized.Conv2d):
+        #         print(f"Layer {name}: scale={module.scale}, zero_point={module.zero_point}, dtype={module.weight().dtype}")
+        # # 打印所有量化参数
+        # for name, module in self.model.named_modules():
+        #     if isinstance(module, torch.nn.quantized.Conv2d):
+        #         print(f"Layer {name}:")
+        #         print(f"  scale={module.scale}")
+        #         print(f"  zero_point={module.zero_point}")
+
         self.logger.info("Transformation is completed")
 
     def _run_search(self):
@@ -511,13 +522,20 @@ class ChopCLI:
             """,
             metavar="TASK",
         )
+        # general_group.add_argument(
+        #     "--load",
+        #     dest="load_name",
+        #     type=_valid_file_or_directory_path,
+        #     help="path to load the model from. (default: %(default)s)",
+        #     metavar="PATH",
+        # )
         general_group.add_argument(
             "--load",
             dest="load_name",
-            type=_valid_file_or_directory_path,
-            help="path to load the model from. (default: %(default)s)",
+            type=str,  # 改为普通字符串类型，不做文件/目录存在性检查
+            help="path to load the model from (if not using a HuggingFace model, this must be an existing file or directory). (default: %(default)s)",
             metavar="PATH",
-        )
+        )        
         general_group.add_argument(
             "--load-type",
             dest="load_type",
@@ -860,6 +878,12 @@ class ChopCLI:
             quant_config = load_config(self.args.quant_config)
         print(f"self.args.model is {self.args.model}")
         if self.args.model == "resnet18":
+            model = models.get_model(
+            dataset_info=dataset_info,
+            checkpoint=self.args.model,
+            pretrained=self.args.is_pretrained
+            )
+        elif self.args.model == "resnet50":
             model = models.get_model(
             dataset_info=dataset_info,
             checkpoint=self.args.model,

@@ -64,10 +64,15 @@ def load_model(
     Returns:
         nn.Module/fx.GraphModule: the model with the checkpoint loaded
     """
+    # if load_type == "hf":
+    #     # raise RuntimeError(
+    #     #     "HuggingFace checkpoint should be loaded using model_inst_fn."
+    #     # )
     if load_type == "hf":
-        raise RuntimeError(
-            "HuggingFace checkpoint should be loaded using model_inst_fn."
-        )
+        from transformers import AutoModelForImageClassification
+        model = AutoModelForImageClassification.from_pretrained(load_name)
+        logger.info(f"Loaded HuggingFace model from {load_name}")
+        return model  # 这里直接返回，不再继续后续逻辑
     elif load_type not in ["pt", "pl", "mz"]:
         raise ValueError(f"Unknown extension for 'load_type': {load_type}")
 
