@@ -5,6 +5,12 @@ import torch
 import onnx
 import numpy as np
 
+import json
+import torch.ao.quantization as tq
+from cuda import cudart
+import os
+
+
 logger = logging.getLogger(__name__)
 
 pytorch_quantization_is_installed = False
@@ -95,7 +101,50 @@ else:
         graph.model = torch.fx.GraphModule(graph.model, graph.fx_graph)
 
         return graph, {"trt_engine_path": trt_engine_path, "onnx_path": onnx_path}
+    
+    class MyCalibrator(trt.IInt8EntropyCalibrator2):
+        def __init__(self, nCalibration, input_generator, cacheFile):
+            trt.IInt8EntropyCalibrator2.__init__(self)
+            self.cacheFile = cacheFile
+            self.nCalibration = nCalibration
+            self.shape = next(iter(input_generator))["x"].shape
+            self.buffeSize = trt.volume(self.shape) * trt.float32.itemsize
+            self.cacheFile = cacheFile
+            _, self.dIn = cudart.cudaMalloc(self.buffeSize)
+            self.input_generator = input_generator
 
+        def get_batch_size(self):
+            return self.shape[0]
+
+        def get_batch(self, nameList=None, inputNodeName=None):
+            try:
+                data = np.array(next(iter(self.input_generator))["x"])
+                cudart.cudaMemcpy(
+                    self.dIn,
+                    data.ctypes.data,
+                    self.buffeSize,
+                    cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
+                )
+                return [int(self.dIn)]
+            except StopIteration:
+                return None
+
+        def read_calibration_cache(self):
+            if os.path.exists(self.cacheFile):
+                print("Succeed finding cahce file: %s" % (self.cacheFile))
+                with open(self.cacheFile, "rb") as f:
+                    cache = f.read()
+                    return cache
+            else:
+                print("Failed finding int8 cache!")
+                return
+
+        def write_calibration_cache(self, cache):
+            with open(self.cacheFile, "wb") as f:
+                f.write(cache)
+            print("Succeed saving int8 cache!")
+            return
+        
     class Quantizer:
         def __init__(self, config):
             self.config = config
@@ -166,6 +215,22 @@ else:
                     prepare_save_path(self.config, method='cache', suffix='cache')
                     )
             """
+            # if default_precision == "int8":
+            #     # 需要显式告诉 TensorRT “我要构建 INT8”
+            #     config.set_flag(trt.BuilderFlag.INT8)
+            #     config.int8_calibrator = Int8Calibrator(
+            #         self.config['num_calibration_batches'],
+            #         self.config['data_module'].train_dataloader(),
+            #         prepare_save_path(self.config, method='cache', suffix='cache')
+            #         )
+
+            # if default_precision == "int8":
+            #     config.set_flag(trt.BuilderFlag.INT8)
+            #     config.int8_calibrator = MyCalibrator(
+            #         pass_args["nCalibration"],
+            #         pass_args["input_generator"],
+            #         pass_args["cacheFile"],
+            #     )            
 
             # Only quantize and calibrate non int8 pytorch-quantization
             if default_precision != "int8":
@@ -204,6 +269,8 @@ else:
                         )
                         layer.precision = trt.float16
                         layer.set_output_type(0, trt.DataType.HALF)
+
+            config.profiling_verbosity = trt.ProfilingVerbosity.DETAILED
 
             serialized_engine = builder.build_serialized_network(network, config)
             if serialized_engine is None:
@@ -247,15 +314,25 @@ else:
                             do_constant_folding=True, input_names=['input'])# Load the ONNX model
             It is a known issue: https://github.com/onnx/onnx/issues/2836 https://github.com/ultralytics/yolov5/issues/5505
             """
+            # torch.onnx.export(
+            #     model.cuda(),
+            #     train_sample.cuda(),
+            #     onnx_path,
+            #     export_params=True,
+            #     opset_version=11,
+            #     do_constant_folding=True,
+            #     input_names=["input"],
+            # )  # Load the ONNX model
+
             torch.onnx.export(
                 model.cuda(),
                 train_sample.cuda(),
                 onnx_path,
                 export_params=True,
-                opset_version=11,
-                do_constant_folding=True,
+                opset_version=13,  # 尝试使用更高的 opset 版本
+                do_constant_folding=False,  # 禁用常量折叠，确保量化节点不被优化掉
                 input_names=["input"],
-            )  # Load the ONNX model
+            )
 
             model = onnx.load(onnx_path)
             try:
@@ -267,6 +344,54 @@ else:
                 f"ONNX Conversion Complete. Stored ONNX model to {onnx_path}"
             )
             return onnx_path
+
+        # def pytorch_to_ONNX(self, model: torch.nn.Module):
+        #     """
+        #     1) 将已经QAT过的模型，先convert成带真实量化节点的“参考模型”；
+        #     2) 再用torch.onnx.export导出ONNX，这样就会出现QuantizeLinear/DequantizeLinear节点。
+        #     """
+        #     self.logger.info("Starting reference convert for QAT model...")
+
+        #     # 如果之前是在CUDA上训练QAT，这里要先转到CPU再convert
+        #     model.to("cpu")
+        #     model.eval()
+
+        #     # ---- 关键一步：convert并启用 is_reference=True ----
+        #     # 这会把模型内部的 fake quant + float op 转成真正的量化/反量化算子
+        #     # 如果你使用的是pytorch_quantization而非torch.ao.quantization，
+        #     # 需要自行查阅pytorch_quantization是否提供类似"convert to Q/DQ"的流程
+        #     #
+        #     # 同时要保证model里已经正确调用prepare/prepare_qat + QAT训练过
+        #     # 这里假设你已经完成了QAT
+        #     model_converted = tq.convert(model, is_reference=True)
+
+        #     # 你也可以验证一下 model_converted 里是不是出现了torch.ao.nn.quantized的层
+        #     self.logger.info("Reference model convert done. Now exporting to ONNX...")
+
+        #     # 构造一个dummy输入
+        #     dataloader = self.config["data_module"].train_dataloader()
+        #     train_sample, _ = next(iter(dataloader))
+        #     train_sample = train_sample.to("cpu")  # onnx导出通常走CPU
+
+        #     # 导出 ONNX
+        #     onnx_path = prepare_save_path(self.config, method="onnx", suffix="onnx")
+        #     torch.onnx.export(
+        #         model_converted,         # 使用convert后的模型
+        #         train_sample,
+        #         onnx_path,
+        #         export_params=True,
+        #         opset_version=13,        # 建议用13或更高
+        #         do_constant_folding=False,
+        #         input_names=["input"],
+        #     )
+
+        #     # 检查ONNX是否合规
+        #     import onnx
+        #     onnx_model = onnx.load(onnx_path)
+        #     onnx.checker.check_model(onnx_model)
+
+        #     self.logger.info(f"ONNX Conversion Complete. Stored ONNX model to {onnx_path}")
+        #     return onnx_path
 
         def export_TRT_model_summary(self, TRT_path):
             """Saves TensorRT model summary to json"""
@@ -288,3 +413,41 @@ else:
                 with open(json_filename, "w") as json_file:
                     json_file.write(layer_info_json)
             self.logger.info(f"TensorRT Model Summary Exported to {json_filename}")
+
+        # def export_TRT_model_summary(self, TRT_path):
+        #     """Saves TensorRT model summary to json and parses engine layer precisions."""
+        #     with open(TRT_path, "rb") as f:
+        #         trt_engine = trt.Runtime(trt.Logger(trt.Logger.ERROR)).deserialize_cuda_engine(f.read())
+        #         inspector = trt_engine.create_engine_inspector()
+
+        #         # 1) 拿到 JSON 字符串
+        #         layer_info_json = inspector.get_engine_information(trt.LayerInformationFormat.JSON)
+
+        #         # 2) 把 JSON 字符串存到文件（你原先已有的代码）
+        #         json_filename = prepare_save_path(self.config, method="json", suffix="json")
+        #         with open(json_filename, "w") as json_file:
+        #             json_file.write(layer_info_json)
+
+        #         self.logger.info(f"TensorRT Model Summary Exported to {json_filename}")
+
+        #         # 3) 解析 JSON 来查看 layer 的实际精度
+        #         layer_info_dict = json.loads(layer_info_json)
+
+        #         # 不同 TensorRT 版本，JSON 的结构可能略有差异；假设它在 "layers" 或 "Layers" 字段下
+        #         layers_key = "layers" if "layers" in layer_info_dict else "Layers"
+        #         layers = layer_info_dict.get(layers_key, [])
+
+        #         int8_count = 0
+        #         for layer in layers:
+        #             # 如果 layer 是个 str，就只做字符串打印
+        #             if isinstance(layer, str):
+        #                 self.logger.info(f"layer is string: {layer}")
+        #                 # 或者用 'INT8' in layer 来判断
+        #                 continue
+        #             name = layer.get("Name", "UnnamedLayer")
+        #             precision = layer.get("Precision", "UNKNOWN")
+        #             self.logger.info(f"Layer {name} uses precision: {precision}")
+        #             if precision.upper() == "INT8":
+        #                 int8_count += 1
+
+        #             self.logger.info(f"Total layers: {len(layers)}, INT8 layers: {int8_count}")
