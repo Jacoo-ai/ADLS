@@ -17,8 +17,7 @@ from ....utils import (
 )
 
 
-from torch.cuda import cudart
-# from cuda import cudart
+from cuda import cudart
 from pytorch_quantization.tensor_quant import QuantDescriptor
 import pynvml
 
@@ -343,29 +342,32 @@ class FakeQuantizer:
         self.logger.info("Fake quantization applied to PyTorch model.")
         return graph
 
-
 class Int8Calibrator(trt.IInt8EntropyCalibrator2):
     def __init__(self, nCalibration, input_generator, cache_file_path):
         trt.IInt8EntropyCalibrator2.__init__(self)
         self.nCalibration = nCalibration
-        self.shape = next(iter(input_generator))[0].shape
+        self.input_iterator = iter(input_generator)
+        self.shape = next(self.input_iterator)[0].shape
         self.buffer_size = trt.volume(self.shape) * trt.float32.itemsize
         self.cache_file = cache_file_path
         _, self.dIn = cudart.cudaMalloc(self.buffer_size)
-        self.input_generator = input_generator
+        self.batch_count = 0
 
     def get_batch_size(self):
         return self.shape[0]
 
     def get_batch(self, nameList=None, inputNodeName=None):
         try:
-            data = np.array(next(iter(self.input_generator))[0])
+            data = np.array(next(self.input_iterator)[0])
             cudart.cudaMemcpy(
                 self.dIn,
                 data.ctypes.data,
                 self.buffer_size,
                 cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
             )
+            self.batch_count += 1
+            if self.batch_count > self.nCalibration:
+                return None
             return [int(self.dIn)]
         except StopIteration:
             return None
@@ -378,13 +380,13 @@ class Int8Calibrator(trt.IInt8EntropyCalibrator2):
                 return cache
         else:
             print("Failed finding int8 cache!")
-            return
+            return None
 
     def write_calibration_cache(self, cache):
         with open(self.cache_file, "wb") as f:
             f.write(cache)
         print("Succeed saving int8 cache!")
-        return
+
 
 
 class PowerMonitor(threading.Thread):
