@@ -56,7 +56,7 @@ def pre_transform_load(
         model = load_model(load_name=load_name, load_type=load_type, model=model)
     return model
 
-def transform(
+def transnew(
     model: torch.nn.Module,
     model_info: dict,
     model_name: str,
@@ -214,7 +214,20 @@ def transform_graph(
     Returns:
         _type_: _description_
     """
+
+    # -------------- 0) 先初始化 --------------
+    results_collector = []
     accelerator = parse_accelerator(accelerator)
+    config = load_config(config)
+    batch_sizes = config["batch_size"]
+    # 如果只写了单个数字，则转成列表
+    if not isinstance(batch_sizes, list):
+        batch_sizes = [batch_sizes]
+
+    # -------------- 1) 对每个 batch_size 跑一次 pass --------------
+    for bs in batch_sizes:
+        logger.info(f"==== Now running all passes with batch_size={bs} ====")
+
     model = pre_transform_load(load_name=load_name, load_type=load_type, model=model)
     model.to(accelerator)
     save_dir = Path(save_dir)
@@ -272,21 +285,68 @@ def transform_graph(
 
     passes_config = config["passes"]
     for pass_name, pass_config in passes_config.items():
+        pass_config["batch_size"] = bs
         pass_name: str
         pass_config: dict
         match pass_name:
 
             case "tensorrt":
-                # 1) 先把 meta param 里含有的 tensor 转成 numpy，以便后续 pass
                 graph, _ = metadata_value_type_cast_transform_pass(
                     graph, pass_args={"fn": to_numpy_if_tensor}
                 )
 
-                # 2) 备份一下原图，若你还想对比 PyTorch 原始模型的推理
                 ori_graph = deepcopy_mase_graph(graph)
                 pass_save_dir = save_dir / "tensorrt"
 
-                # 3) 将配置里的一些信息补充到 pass_config
+                pass_config["task"] = task
+                pass_config["dataset"] = config["dataset"]
+                # pass_config["batch_size"] = config["batch_size"]
+                pass_config["model"] = config["model"]
+                pass_config["data_module"] = data_module
+                pass_config["accelerator"] = accelerator.type
+
+                if accelerator.type == "cuda":
+                    os.environ["CUDA_MODULE_LOADING"] = "LAZY"
+
+                short_cfg = pass_config.copy()
+                short_cfg["num_GPU_warmup_batches"] = 0
+                short_cfg["num_batches"] = 1
+                short_cfg["test"] = True 
+                logger.info("Running minimal runtime analysis on original graph (just 1 batch) ...")
+                logger.info(f"Before analyzing original graph: pass_args = {short_cfg}")
+                _, _ = PASSES["runtime_analysis_pass"](ori_graph, pass_args=short_cfg)
+
+
+                precision = config["passes"]["tensorrt"]["default"]["config"].get("precision", "fp16")
+                if precision == "int8":
+                    graph, _ = PASSES["tensorrt_fake_quantize_transform_pass"](graph, pass_args=pass_config)
+                    PASSES["summarize_quantization"](
+                        graph, {"save_dir": pass_save_dir, "original_graph": ori_graph}
+                    )
+                    graph, _ = PASSES["tensorrt_calibrate"](graph, pass_args=pass_config)
+                    graph, _ = PASSES["tensorrt_fine_tune"](graph, pass_args=pass_config)
+                else:
+                    logger.info(f"precision={precision}, skipping int8 calibration/fine-tune...")
+
+                graph, runtime_meta = PASSES["tensorrt_engine_interface_pass"](graph, pass_args=pass_config)
+
+                deploy_cfg = pass_config.copy()
+                deploy_cfg["num_GPU_warmup_batches"] = 20  
+                deploy_cfg["num_batches"] = 500 
+                deploy_cfg["test"] = True
+
+                logger.info("Measuring final TensorRT engine with warmup=20, test=500 ...")
+                _, _ = PASSES["runtime_analysis_pass"](
+                    runtime_meta["trt_engine_path"], pass_args=deploy_cfg
+                )
+
+            case "runtime_analysis_ori":
+                logger.info("Running runtime_analysis_ori pass on current graph...")
+                graph, _ = metadata_value_type_cast_transform_pass(
+                    graph, pass_args={"fn": to_numpy_if_tensor}
+                )
+
+                ori_graph = deepcopy_mase_graph(graph)
                 pass_config["task"] = task
                 pass_config["dataset"] = config["dataset"]
                 pass_config["batch_size"] = config["batch_size"]
@@ -295,69 +355,129 @@ def transform_graph(
                 pass_config["accelerator"] = accelerator.type
 
                 if accelerator.type == "cuda":
-                    # 对 CUDA 生效的懒加载
                     os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
                 short_cfg = pass_config.copy()
                 short_cfg["num_GPU_warmup_batches"] = 0
                 short_cfg["num_batches"] = 1
-                short_cfg["test"] = True  # 还是让它测一下
+                short_cfg["test"] = True 
                 logger.info("Running minimal runtime analysis on original graph (just 1 batch) ...")
                 logger.info(f"Before analyzing original graph: pass_args = {short_cfg}")
-                _, _ = PASSES["runtime_analysis_pass"](ori_graph, pass_args=short_cfg)
+                _, res = PASSES["runtime_analysis_pass"](ori_graph, pass_args=short_cfg)
+                if res is not None:
+                    acc = res.get("Average Accuracy", 0.0)
+                    lat = res.get("Average Latency", 0.0)
+                    results_collector.append({
+                        "stage": "Original",
+                        "accuracy": acc,
+                        "latency": lat
+                    })
 
+            case "tensorrt_int8":
+                graph, _ = metadata_value_type_cast_transform_pass(
+                    graph, pass_args={"fn": to_numpy_if_tensor}
+                )
 
-                # 4) 根据 TOML 中的 precision 判断是否 int8
-                precision = config["passes"]["tensorrt"]["default"]["config"].get("precision", "fp16")
+                ori_graph = deepcopy_mase_graph(graph)
+                pass_save_dir = save_dir / "tensorrt"
 
-                if precision == "int8":
-                    # 仅在 int8 模式下执行: fake quantize -> summarize -> calibrate -> fine tune
-                    graph, _ = PASSES["tensorrt_fake_quantize_transform_pass"](graph, pass_args=pass_config)
+                pass_config["task"] = task
+                pass_config["dataset"] = config["dataset"]
+                pass_config["batch_size"] = config["batch_size"]
+                pass_config["model"] = config["model"]
+                pass_config["data_module"] = data_module
+                pass_config["accelerator"] = accelerator.type
 
-                    PASSES["summarize_quantization"](
-                        graph, {"save_dir": pass_save_dir, "original_graph": ori_graph}
-                    )
+                if accelerator.type == "cuda":
+                    os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
-                    graph, _ = PASSES["tensorrt_calibrate"](graph, pass_args=pass_config)
-                    graph, _ = PASSES["tensorrt_fine_tune"](graph, pass_args=pass_config)
-                elif precision == "int4":
-                    # 仅在 int4 模式下执行: fake quantize -> summarize -> calibrate -> fine tune
-                    graph, _ = PASSES["tensorrt_fake_quantize_transform_pass"](graph, pass_args=pass_config)
-
-                    PASSES["summarize_quantization"](
-                        graph, {"save_dir": pass_save_dir, "original_graph": ori_graph}
-                    )
-
-                    graph, _ = PASSES["tensorrt_calibrate"](graph, pass_args=pass_config)
-                    graph, _ = PASSES["tensorrt_fine_tune"](graph, pass_args=pass_config)
-                else:
-                    logger.info(f"precision={precision}, skipping int8 calibration/fine-tune...")
-
-                # 5) 最后统一调用 tensorrt_engine_interface_pass 生成 engine
                 graph, runtime_meta = PASSES["tensorrt_engine_interface_pass"](graph, pass_args=pass_config)
 
-                # 6) 如果想对比原始 PyTorch 性能，可以保留这一步
-                #    但把 warmup batch / num_batches 设置小一些，不要让它干扰太久
-                #    如果完全不需要对比原图，就可以直接删掉
-                # short_cfg = pass_config.copy()
-                # short_cfg["num_GPU_warmup_batches"] = 0
-                # short_cfg["num_batches"] = 1
-                # short_cfg["test"] = True  # 还是让它测一下
-                # logger.info("Running minimal runtime analysis on original graph (just 1 batch) ...")
-                # logger.info(f"Before analyzing original graph: pass_args = {short_cfg}")
-                # _, _ = PASSES["runtime_analysis_pass"](ori_graph, pass_args=short_cfg)
-
-                # 7) 对最终生成好的 .trt engine 做“正式”的 warmup + 测速
-                #    这才是真正的“部署后推理”性能
                 deploy_cfg = pass_config.copy()
-                deploy_cfg["num_GPU_warmup_batches"] = 20  # 或者你想要更多
-                deploy_cfg["num_batches"] = 500           # 或者你想要更多
+                deploy_cfg["num_GPU_warmup_batches"] = 20  
+                deploy_cfg["num_batches"] = 500 
                 deploy_cfg["test"] = True
 
                 logger.info("Measuring final TensorRT engine with warmup=20, test=500 ...")
-                _, _ = PASSES["runtime_analysis_pass"](
-                    runtime_meta["trt_engine_path"], pass_args=deploy_cfg
+                _, res = PASSES["runtime_analysis_pass"](runtime_meta["trt_engine_path"], pass_args=deploy_cfg)
+                if res is not None:
+                    acc = res.get("Average Accuracy", 0.0)
+                    lat = res.get("Average Latency", 0.0)
+                    results_collector.append({
+                        "stage": "INT8",
+                        "accuracy": acc,
+                        "latency": lat
+                    })
+
+            case "tensorrt_fp16":
+                graph, _ = metadata_value_type_cast_transform_pass(
+                    graph, pass_args={"fn": to_numpy_if_tensor}
                 )
+
+                pass_config["task"] = task
+                pass_config["dataset"] = config["dataset"]
+                pass_config["batch_size"] = config["batch_size"]
+                pass_config["model"] = config["model"]
+                pass_config["data_module"] = data_module
+                pass_config["accelerator"] = accelerator.type
+
+                if accelerator.type == "cuda":
+                    os.environ["CUDA_MODULE_LOADING"] = "LAZY"
+
+                logger.info(f"precision=trt_fp16, skipping int8 calibration/fine-tune...")
+
+                graph, runtime_meta = PASSES["tensorrt_engine_interface_pass"](graph, pass_args=pass_config)
+
+                deploy_cfg = pass_config.copy()
+                deploy_cfg["num_GPU_warmup_batches"] = 20  
+                deploy_cfg["num_batches"] = 500 
+                deploy_cfg["test"] = True
+
+                logger.info("Measuring final TensorRT engine with warmup=20, test=500 ...")
+                _, res = PASSES["runtime_analysis_pass"](runtime_meta["trt_engine_path"], pass_args=deploy_cfg)
+                if res is not None:
+                    acc = res.get("Average Accuracy", 0.0)
+                    lat = res.get("Average Latency", 0.0)
+                    results_collector.append({
+                        "stage": "FP16",
+                        "accuracy": acc,
+                        "latency": lat
+                    })
+
+            case "tensorrt_fp32":
+                graph, _ = metadata_value_type_cast_transform_pass(
+                    graph, pass_args={"fn": to_numpy_if_tensor}
+                )
+
+                pass_config["task"] = task
+                pass_config["dataset"] = config["dataset"]
+                pass_config["batch_size"] = config["batch_size"]
+                pass_config["model"] = config["model"]
+                pass_config["data_module"] = data_module
+                pass_config["accelerator"] = accelerator.type
+
+                if accelerator.type == "cuda":
+                    os.environ["CUDA_MODULE_LOADING"] = "LAZY"
+
+                logger.info(f"precision=trt_fp32, skipping int8 calibration/fine-tune...")
+
+                graph, runtime_meta = PASSES["tensorrt_engine_interface_pass"](graph, pass_args=pass_config)
+
+                deploy_cfg = pass_config.copy()
+                deploy_cfg["num_GPU_warmup_batches"] = 20  
+                deploy_cfg["num_batches"] = 500 
+                deploy_cfg["test"] = True
+
+                logger.info("Measuring final TensorRT engine with warmup=20, test=500 ...")
+                _, res = PASSES["runtime_analysis_pass"](runtime_meta["trt_engine_path"], pass_args=deploy_cfg)
+                if res is not None:
+                    acc = res.get("Average Accuracy", 0.0)
+                    lat = res.get("Average Latency", 0.0)
+                    results_collector.append({
+                        "stage": "FP32",
+                        "accuracy": acc,
+                        "latency": lat
+                    })
 
             case "onnxruntime":
                 pass_save_dir = save_dir / "onnxruntime"
@@ -566,6 +686,28 @@ def transform_graph(
         assert isinstance(
             graph, MaseGraph
         ), f"Return type of {pass_name} must be MaseGraph, got {type(graph)}"
+
+    # 2) for 循环执行完（所有 pass 都跑完）后，这里再汇总 & 画图
+    if len(results_collector) > 0:
+        import matplotlib.pyplot as plt
+
+        x_vals = [item["latency"] for item in results_collector]
+        y_vals = [item["accuracy"] for item in results_collector]
+        labels = [item["stage"] for item in results_collector]
+
+        plt.figure()
+        plt.scatter(x_vals, y_vals)
+        for i, label in enumerate(labels):
+            plt.text(x_vals[i], y_vals[i], label, fontsize=9)
+
+        plt.xlabel("Latency (ms)")
+        plt.ylabel("Accuracy")
+        plt.title("Comparison of different precision modes")
+
+        # 保存图表到 transform 文件夹
+        plot_path = save_dir / "precision_compare_plot.png"
+        plt.savefig(plot_path)
+        logger.info(f"Plot saved to: {plot_path}")
 
     if save_dir is not None:
         transformed_ckpt = save_dir / "transformed_ckpt"

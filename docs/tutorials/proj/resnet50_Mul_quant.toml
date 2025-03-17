@@ -1,0 +1,120 @@
+# ========================================================
+# 基础设置
+# ========================================================
+model = "resnet50"
+dataset = "cifar10"
+
+max_epochs = 10
+batch_size = [8,16,32,64,128]
+learning_rate = 1e-3
+accelerator = "gpu"
+task = "cls"
+
+[transform]
+style = "graph"
+
+passes = [
+    "runtime_analysis_ori",
+    "tensorrt_int8",
+    "tensorrt_fp16",
+    "tensorrt_fp32"
+]
+
+# ========================================================
+# 1) 测试原始 PyTorch 模型 (baseline)
+# ========================================================
+[passes.runtime_analysis_ori]
+type = "runtime_analysis"
+num_batches = 500            # 用于统计推理性能
+num_GPU_warmup_batches = 5   # 预热批次数
+test = true                  # 如果 test = true，会在推理时顺便做一次acc评估
+
+# ========================================================
+# 2) INT8 量化 + 测速
+# ========================================================
+[passes.tensorrt_int8]
+type = "tensorrt_int8"
+by = "type"
+
+num_calibration_batches = 10
+post_calibration_analysis = true
+
+    [passes.tensorrt_int8.default.config]
+        quantize = true
+        calibrators = ["percentile", "mse", "entropy"]
+        percentiles = [99.0, 99.9, 99.99]
+        precision = "int8"
+
+    [passes.tensorrt_int8.fine_tune]
+        fine_tune = true
+
+    [passes.tensorrt_int8.default.input]
+        calibrator = "histogram"
+        quantize_axis = false
+
+    [passes.tensorrt_int8.default.weight]
+        calibrator = "histogram"
+        quantize_axis = false
+
+    [passes.tensorrt_int8.runtime_analysis]
+        num_batches = 500
+        num_GPU_warmup_batches = 5
+        test = true
+
+# ========================================================
+# 3) FP16 + 测速
+# ========================================================
+[passes.tensorrt_fp16]
+type = "tensorrt_fp16"
+by = "type"
+num_calibration_batches = 0
+post_calibration_analysis = false
+
+    [passes.tensorrt_fp16.default.config]
+        quantize = false
+        precision = "fp16"
+
+    [passes.tensorrt_fp16.fine_tune]
+        fine_tune = false
+
+    [passes.tensorrt_fp16.default.input]
+        calibrator = "histogram"
+        quantize_axis = false
+
+    [passes.tensorrt_fp16.default.weight]
+        calibrator = "histogram"
+        quantize_axis = false
+
+    [passes.tensorrt_fp16.runtime_analysis]
+        num_batches = 500
+        num_GPU_warmup_batches = 5
+        test = true
+
+# ========================================================
+# 4) FP32 + 测速
+# ========================================================
+[passes.tensorrt_fp32]
+type = "tensorrt_fp32"
+by = "type"
+num_calibration_batches = 0
+post_calibration_analysis = false
+
+    [passes.tensorrt_fp32.default.config]
+        quantize = false
+        precision = "fp32"
+
+    [passes.tensorrt_fp32.fine_tune]
+        fine_tune = false
+
+    [passes.tensorrt_fp32.default.input]
+        calibrator = "histogram"
+        quantize_axis = false
+
+    [passes.tensorrt_fp32.default.weight]
+        calibrator = "histogram"
+        quantize_axis = false
+
+    [passes.tensorrt_fp32.runtime_analysis]
+        num_batches = 500
+        num_GPU_warmup_batches = 5
+        test = true
