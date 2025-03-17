@@ -178,6 +178,9 @@ else:
                 config.set_flag(trt.BuilderFlag.DIRECT_IO)
                 config.set_flag(trt.BuilderFlag.REJECT_EMPTY_ALGORITHMS)
 
+            if default_precision == "fp4" and not layer_wise_mixed_precision:
+                config.set_flag(trt.BuilderFlag.FP4)
+
             if default_precision == "fp16" and not layer_wise_mixed_precision:
                 config.set_flag(trt.BuilderFlag.FP16)
             elif layer_wise_mixed_precision:
