@@ -25,8 +25,8 @@ passes = [
 # ========================================================
 [passes.runtime_analysis_ori]
 type = "runtime_analysis"
-num_batches = 500            # 用于统计推理性能
-num_GPU_warmup_batches = 5   # 预热批次数
+num_batches = 1000            # 用于统计推理性能
+num_GPU_warmup_batches = 10   # 预热批次数
 test = true                  # 如果 test = true，会在推理时顺便做一次acc评估
 
 # ========================================================
@@ -57,8 +57,8 @@ post_calibration_analysis = true
         quantize_axis = false
 
     [passes.tensorrt_int8.runtime_analysis]
-        num_batches = 500
-        num_GPU_warmup_batches = 5
+        num_batches = 1000
+        num_GPU_warmup_batches = 10
         test = true
 
 # ========================================================
@@ -86,8 +86,8 @@ post_calibration_analysis = false
         quantize_axis = false
 
     [passes.tensorrt_fp16.runtime_analysis]
-        num_batches = 500
-        num_GPU_warmup_batches = 5
+        num_batches = 1000
+        num_GPU_warmup_batches = 10
         test = true
 
 # ========================================================
@@ -115,6 +115,6 @@ post_calibration_analysis = false
         quantize_axis = false
 
     [passes.tensorrt_fp32.runtime_analysis]
-        num_batches = 500
-        num_GPU_warmup_batches = 5
+        num_batches = 1000
+        num_GPU_warmup_batches = 10
         test = true
