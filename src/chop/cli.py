@@ -50,7 +50,7 @@ from tabulate import tabulate
 import torch
 
 from . import models
-from .actions import test, train, transform, search, emit, simulate
+from .actions import test, train, transform,transnew, search, emit, simulate
 from .dataset import MaseDataModule, AVAILABLE_DATASETS, get_dataset_info
 from .tools import post_parse_load_config, load_config
 
@@ -383,18 +383,7 @@ class ChopCLI:
             "load_type": self.args.load_type,
             "accelerator": self.args.accelerator,
         }
-        transform(**transform_params)
-        # # 检查 QuantConv2d 是否真的变成 INT8
-        # for name, module in self.model.named_modules():
-        #     if isinstance(module, torch.nn.quantized.Conv2d):
-        #         print(f"Layer {name}: scale={module.scale}, zero_point={module.zero_point}, dtype={module.weight().dtype}")
-        # # 打印所有量化参数
-        # for name, module in self.model.named_modules():
-        #     if isinstance(module, torch.nn.quantized.Conv2d):
-        #         print(f"Layer {name}:")
-        #         print(f"  scale={module.scale}")
-        #         print(f"  zero_point={module.zero_point}")
-
+        transnew(**transform_params)
         self.logger.info("Transformation is completed")
 
     def _run_search(self):
