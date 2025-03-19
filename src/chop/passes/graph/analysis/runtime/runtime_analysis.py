@@ -251,6 +251,22 @@ class RuntimeAnalysis:
         # return the prediction back to the CPU
         return preds.detach().cpu(), latency
 
+    # def infer_trt_cuda(self, trt_context, input_data):
+    #     bufferH = []
+    #     bufferH.append(np.ascontiguousarray(input_data))
+    #     # batch_size = input_data.shape[0]  # 获取实际 batch size
+    #     # self.context.set_input_shape(self.lTensorName[0], (batch_size, 3, 32, 32))
+    #     for i in range(self.n_Input, self.num_io):
+    #         # tensor_name = self.lTensorName[i]
+    #         # shape = self.context.get_tensor_shape(tensor_name)
+    #         # # print(f"Tensor {tensor_name} shape before np.empty(): {shape}") 
+    #         bufferH.append(
+    #             np.empty(
+    #                 self.context.get_tensor_shape(self.lTensorName[i]),
+    #                 dtype=trt.nptype(self.engine.get_tensor_dtype(self.lTensorName[i])),
+    #             )
+    #         )
+
     def infer_trt_cuda(self, trt_context, input_data):
         bufferH = []
         bufferH.append(np.ascontiguousarray(input_data))

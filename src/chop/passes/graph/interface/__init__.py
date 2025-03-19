@@ -6,5 +6,6 @@ from .save_and_load import (
 )
 
 from .tensorrt import tensorrt_engine_interface_pass
+from .tensorrt import tensorrt_sparsity_interface_pass
 
 from .onnxrt import onnx_runtime_interface_pass
