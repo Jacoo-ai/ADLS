@@ -51,6 +51,7 @@ from chop.passes.graph.analysis.runtime.runtime_analysis import (
 )
 
 from .interface import tensorrt_engine_interface_pass
+from .interface import tensorrt_sparsity_interface_pass
 
 from .transforms.tensorrt import (
     tensorrt_calibrate_transform_pass,
@@ -171,3 +172,7 @@ if check_dependencies("tensorrt_fine_tune"):
     PASSES["tensorrt_fine_tune"] = (
         tensorrt_fine_tune_transform_pass
     )
+
+if check_dependencies("tensorrt_sparsity_interface_pass"):
+    INTERFACE_PASSES.append("tensorrt_sparsity_interface_pass")
+    PASSES["tensorrt_sparsity_interface_pass"] = tensorrt_sparsity_interface_pass
