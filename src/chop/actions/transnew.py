@@ -298,6 +298,36 @@ def _dispatch_pass(pass_name, pass_cfg, graph, results_collector):
                 })
             return graph, results_collector
 
+        case "sparsity_fp16":
+            logger.info(f">> {pass_name} pass ...")
+            # 先对graph做value cast
+            graph, _ = metadata_value_type_cast_transform_pass(
+                graph, pass_args={"fn": to_numpy_if_tensor}
+            )
+
+            # 调用我们新建的 “tensorrt_sparsity_interface_pass”
+            graph, runtime_meta = PASSES["tensorrt_sparsity_interface_pass"](
+                graph, pass_args=pass_cfg
+            )
+
+            # 调用 runtime_analysis 测速
+            _, analysis_res = PASSES["runtime_analysis_pass"](
+                runtime_meta["trt_engine_path"], pass_args=pass_cfg
+            )
+            if analysis_res is not None:
+                acc = analysis_res.get("Average Accuracy", 0.0)
+                lat = analysis_res.get("Average Latency", 0.0)
+                # 这里stage就写 “Sparsity-FP16” 或你想要的标识
+                stage = "Sparsity-FP16"
+                bs = pass_cfg.get("batch_size", 1)
+                results_collector.append({
+                    "stage": stage,
+                    "accuracy": acc,
+                    "latency": lat,
+                    "batch_size": bs
+                })
+            return graph, results_collector
+        
         case _:
             logger.info(f">> {pass_name} pass (generic) ...")
             my_pass = PASSES[pass_name]

@@ -1,1 +1,2 @@
 from .quantize import tensorrt_engine_interface_pass
+from .sparsity import tensorrt_sparsity_interface_pass
