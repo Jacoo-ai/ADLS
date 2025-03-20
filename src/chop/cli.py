@@ -50,7 +50,7 @@ from tabulate import tabulate
 import torch
 
 from . import models
-from .actions import test, train, transform,transnew, search, emit, simulate
+from .actions import test, train, transform,transnew,transmeta, search, emit, simulate
 from .dataset import MaseDataModule, AVAILABLE_DATASETS, get_dataset_info
 from .tools import post_parse_load_config, load_config
 
@@ -97,7 +97,7 @@ LOGO = f"""
         https://github.com/DeepWok/mase/wiki
 """
 TASKS = ["classification", "cls", "translation", "tran", "language_modeling", "lm"]
-ACTIONS = ["train", "test", "transform", "search", "emit", "simulate"]
+ACTIONS = ["train", "test", "transnew", "search", "emit", "simulate", "transform","meta"]
 INFO_TYPE = ["all", "model", "dataset"]
 LOAD_TYPE = [
     "pt",  # PyTorch module state dictionary
@@ -250,6 +250,10 @@ class ChopCLI:
         match self.args.action:
             case "transform":
                 run_action_fn = self._run_transform
+            case "transnew":
+                run_action_fn = self._run_transnew
+            case "meta":
+                run_action_fn = self._run_meta
             case "train":
                 run_action_fn = self._run_train
             case "test":
@@ -383,8 +387,57 @@ class ChopCLI:
             "load_type": self.args.load_type,
             "accelerator": self.args.accelerator,
         }
+        transform(**transform_params)
+        self.logger.info("Transformation is completed")
+
+    def _run_transnew(self):
+        # A configuration is compulsory for transformation passes
+        if self.args.config is None:
+            raise ValueError("expected configuration via --config, got None")
+
+        self.logger.info(f"Transforming model {self.args.model!r}...")
+        self.data_module.prepare_data()
+        self.data_module.setup()
+
+        transform_params = {
+            "model": self.model,
+            "model_info": self.model_info,
+            "model_name": self.args.model,
+            "data_module": self.data_module,
+            "task": self.args.task,
+            "config": self.args.config,
+            "save_dir": os.path.join(self.output_dir_sw, "transform"),
+            "load_name": self.args.load_name,
+            "load_type": self.args.load_type,
+            "accelerator": self.args.accelerator,
+        }
         transnew(**transform_params)
         self.logger.info("Transformation is completed")
+
+    def _run_meta(self):
+        # A configuration is compulsory for transformation passes
+        if self.args.config is None:
+            raise ValueError("expected configuration via --config, got None")
+
+        self.logger.info(f"Transforming model {self.args.model!r}...")
+        self.data_module.prepare_data()
+        self.data_module.setup()
+
+        transform_params = {
+            "model": self.model,
+            "model_info": self.model_info,
+            "model_name": self.args.model,
+            "data_module": self.data_module,
+            "task": self.args.task,
+            "config": self.args.config,
+            "save_dir": os.path.join(self.output_dir_sw, "transform"),
+            "load_name": self.args.load_name,
+            "load_type": self.args.load_type,
+            "accelerator": self.args.accelerator,
+        }
+        transmeta(**transform_params)
+        self.logger.info("Transformation is completed")
+
 
     def _run_search(self):
         load_name = None
