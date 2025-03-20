@@ -5,7 +5,7 @@ model = "resnet18"
 dataset = "cifar10"
 
 max_epochs = 10
-batch_size = [8,16,32,64,128]
+batch_size = [8,16]
 learning_rate = 1e-3
 accelerator = "gpu"
 task = "cls"

@@ -298,27 +298,21 @@ def _dispatch_pass(pass_name, pass_cfg, graph, results_collector):
                 })
             return graph, results_collector
 
-        case "sparsity_fp16":
+        case "sparsity_fp16" | "sparsity_int8":
             logger.info(f">> {pass_name} pass ...")
-            # 先对graph做value cast
-            graph, _ = metadata_value_type_cast_transform_pass(
-                graph, pass_args={"fn": to_numpy_if_tensor}
-            )
+            graph, _ = metadata_value_type_cast_transform_pass(graph, pass_args={"fn": to_numpy_if_tensor})
 
-            # 调用我们新建的 “tensorrt_sparsity_interface_pass”
-            graph, runtime_meta = PASSES["tensorrt_sparsity_interface_pass"](
-                graph, pass_args=pass_cfg
-            )
+            # 传递 precision 参数，FP16 还是 INT8
+            precision = "fp16" if pass_name == "sparsity_fp16" else "int8"
+            pass_cfg["precision"] = precision  # 让 `tensorrt_sparsity_interface_pass` 知道是 FP16 还是 INT8
 
-            # 调用 runtime_analysis 测速
-            _, analysis_res = PASSES["runtime_analysis_pass"](
-                runtime_meta["trt_engine_path"], pass_args=pass_cfg
-            )
+            graph, runtime_meta = PASSES["tensorrt_sparsity_interface_pass"](graph, pass_args=pass_cfg)
+
+            _, analysis_res = PASSES["runtime_analysis_pass"](runtime_meta["trt_engine_path"], pass_args=pass_cfg)
             if analysis_res is not None:
                 acc = analysis_res.get("Average Accuracy", 0.0)
                 lat = analysis_res.get("Average Latency", 0.0)
-                # 这里stage就写 “Sparsity-FP16” 或你想要的标识
-                stage = "Sparsity-FP16"
+                stage = "Sparsity-FP16" if pass_name == "sparsity_fp16" else "Sparsity-INT8"
                 bs = pass_cfg.get("batch_size", 1)
                 results_collector.append({
                     "stage": stage,
@@ -327,13 +321,12 @@ def _dispatch_pass(pass_name, pass_cfg, graph, results_collector):
                     "batch_size": bs
                 })
             return graph, results_collector
-        
+
         case _:
             logger.info(f">> {pass_name} pass (generic) ...")
             my_pass = PASSES[pass_name]
             graph, _ = my_pass(graph, pass_args=pass_cfg)
             return graph, results_collector
-
 
 def _plot_results(results_collector, save_dir):
     """

@@ -1,7 +1,7 @@
 # ========================================================
 # 基础设置
 # ========================================================
-model = resnet50
+model = "resnet50"
 dataset = "cifar10"
 
 max_epochs = 10
@@ -15,6 +15,7 @@ style = "graph"
 
 passes = [
     "tensorrt_int8",
+    "sparsity_int8",
     "tensorrt_fp16",
     "sparsity_fp16",
     "tensorrt_fp32",
@@ -53,7 +54,40 @@ post_calibration_analysis = true
         test = true
 
 # ========================================================
-# 2) FP16
+# 2) INT8 + 2:4稀疏 + 测速
+# ========================================================
+[passes.sparsity_int8]
+type = "sparsity_int8"
+by = "type"
+
+num_calibration_batches = 10
+post_calibration_analysis = true
+
+    [passes.sparsity_int8.default.config]
+        quantize = true
+        calibrators = ["percentile", "mse", "entropy"]
+        percentiles = [99.0, 99.9, 99.99]
+        precision = "int8"
+
+    [passes.sparsity_int8.fine_tune]
+        fine_tune = true
+
+    [passes.sparsity_int8.default.input]
+        calibrator = "histogram"
+        quantize_axis = false
+
+    [passes.sparsity_int8.default.weight]
+        calibrator = "histogram"
+        quantize_axis = false
+
+    [passes.sparsity_int8.runtime_analysis]
+        num_batches = 1000
+        num_GPU_warmup_batches = 10
+        test = true
+
+
+# ========================================================
+# 3) FP16
 # ========================================================
 [passes.tensorrt_fp16]
 type = "tensorrt_fp16"
@@ -82,7 +116,7 @@ post_calibration_analysis = false
         test = true
 
 # ========================================================
-# 3) FP16 + 2:4稀疏 
+# 4) FP16 + 2:4稀疏 
 # ========================================================
 [passes.sparsity_fp16]
 type = "sparsity_fp16"
@@ -111,7 +145,7 @@ post_calibration_analysis = false
     test = true
 
 # ========================================================
-# 4) FP32 
+# 5) FP32 
 # ========================================================
 [passes.tensorrt_fp32]
 type = "tensorrt_fp32"
