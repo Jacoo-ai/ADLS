@@ -43,11 +43,12 @@ else:
         """
         1) 进行 2:4 稀疏化
         2) 导出 ONNX
-        3) 构建 TensorRT 引擎 (FP16 + SPARSE_WEIGHTS)
+        3) 构建 TensorRT 引擎 (FP16/INT8 + SPARSE_WEIGHTS)
         4) 返回 {trt_engine_path, onnx_path} 给后续 runtime_analysis_pass
         """
         batch_size = pass_args.get("batch_size", 16)  # 默认 batch_size=16
-        logger.info(f"Using batch_size={batch_size} for sparsity pass")
+        precision = pass_args.get("precision", "fp16")  # 选择 FP16 或 INT8
+        logger.info(f"Using batch_size={batch_size}, precision={precision} for sparsity pass")
 
         # 1) 先做 2:4 稀疏化
         _apply_2_4_sparsity_to_pytorch(graph.model, pass_args)
@@ -55,8 +56,8 @@ else:
         # 2) 导出 ONNX（传入 batch_size）
         onnx_path = _export_to_onnx(graph.model, pass_args, batch_size)
 
-        # 3) 构建 TensorRT 引擎（传入 batch_size）
-        trt_path = _build_trt_engine(onnx_path, pass_args, batch_size)
+        # 3) 构建 TensorRT 引擎（传入 batch_size 和 precision）
+        trt_path = _build_trt_engine(onnx_path, pass_args, batch_size, precision)
 
         # 4) 返回路径信息
         meta = {"trt_engine_path": trt_path, "onnx_path": onnx_path}
@@ -125,8 +126,9 @@ else:
 
 
 
-    def _build_trt_engine(onnx_path, pass_args, batch_size):
-        logger.info(f"Building TensorRT engine with FP16 + SPARSE_WEIGHTS (batch_size={batch_size})")
+    def _build_trt_engine(onnx_path, pass_args, batch_size, precision="fp16"):
+        """构建 TensorRT 引擎，支持 FP16 和 INT8"""
+        logger.info(f"Building TensorRT engine with {precision.upper()} + SPARSE_WEIGHTS (batch_size={batch_size})")
         
         from ...transforms.tensorrt.quantize.utils import prepare_save_path
         import tensorrt as trt
@@ -144,31 +146,54 @@ else:
 
         config = builder.create_builder_config()
         config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 4 << 30)
-        config.set_flag(trt.BuilderFlag.FP16)
         config.set_flag(trt.BuilderFlag.SPARSE_WEIGHTS)
+
+        if precision == "fp16":
+            config.set_flag(trt.BuilderFlag.FP16)
+
+        elif precision == "int8":
+            config.set_flag(trt.BuilderFlag.INT8)
+
+            # 修正 `Int8Calibrator` 的参数传递
+            num_calibration_batches = pass_args.get("num_calibration_batches", 10)
+            dataloader = pass_args["data_module"].train_dataloader()
+            cache_file = prepare_save_path(pass_args, method='cache', suffix='cache')
+
+            calibrator = Int8Calibrator(
+                nCalibration=num_calibration_batches,  # 传入正确的校准 batch 数量
+                input_generator=dataloader,  # 传入数据加载器
+                cache_file_path=cache_file   # 传入 cache 文件路径
+            )
+            config.int8_calibrator = calibrator
+
+            # 设置 INT8 计算层
+            for idx in range(network.num_layers):
+                layer = network.get_layer(idx)
+                if layer.type in [trt.LayerType.CONVOLUTION, trt.LayerType.MATRIX_MULTIPLY]:
+                    try:
+                        layer.precision = trt.int8
+                        layer.set_output_type(0, trt.DataType.INT8)
+                    except Exception as e:
+                        logger.warning(f"Failed to set layer {idx} ({layer.name}) to INT8: {e}")
 
         profile = builder.create_optimization_profile()
         input_tensor = network.get_input(0)
-        print("TensorRT Input Shape: ", network.get_input(0).shape)
 
         profile.set_shape(
             input_tensor.name,
-            (batch_size,) + input_tensor.shape[1:],  # 最小 batch
-            (batch_size,) + input_tensor.shape[1:],  # 最优 batch
-            (batch_size,) + input_tensor.shape[1:],  # 最大 batch
+            (batch_size,) + input_tensor.shape[1:],  
+            (batch_size,) + input_tensor.shape[1:],  
+            (batch_size,) + input_tensor.shape[1:],  
         )
         config.add_optimization_profile(profile)
 
-        optimized_shape = profile.get_shape(input_tensor.name)
-        print(f"TensorRT Optimized Input Shape: {optimized_shape}")
-
         engine_bytes = builder.build_serialized_network(network, config)
         if engine_bytes is None:
-            raise RuntimeError("Failed building TRT engine with SPARSE_WEIGHTS & FP16")
+            raise RuntimeError(f"Failed building TRT engine with SPARSE_WEIGHTS & {precision.upper()}")
 
         trt_path = prepare_save_path(pass_args, method="trt", suffix="trt")
         with open(trt_path, "wb") as f:
             f.write(engine_bytes)
 
-        logger.info(f"Sparse + FP16 TensorRT engine built => {trt_path}")
+        logger.info(f"Sparse + {precision.upper()} TensorRT engine built => {trt_path}")
         return trt_path
