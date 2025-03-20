@@ -11,27 +11,16 @@ task = "cls"
 [transform]
     style = "graph"
 
-[passes.tensorrt]
+[passes.tensorrt_fp16]
     by = "type"
     num_calibration_batches = 0
     post_calibration_analysis = false
 
-    [passes.tensorrt.default.config]
-        quantize = false
-        precision = 'fp16'
+[passes.tensorrt_fp16.default.config]
+    quantize = false
+    precision = 'fp16'
 
-[passes.tensorrt.fine_tune]
-    fine_tune = false
-
-[passes.tensorrt.default.input]
-    calibrator = 'histogram'
-    quantize_axis = false
-
-[passes.tensorrt.default.weight]
-    calibrator = 'histogram'
-    quantize_axis = false
-
-[passes.tensorrt.runtime_analysis]
+[passes.tensorrt_fp16.runtime_analysis]
     num_batches = 500
     num_GPU_warmup_batches = 5
     test = true
