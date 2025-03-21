@@ -1,0 +1,28 @@
+# basics
+model = "resnet18"
+dataset = "cifar10"
+
+max_epochs = 10
+batch_size = 64
+learning_rate = 1e-3
+accelerator = "gpu"
+task = "cls"
+
+[transform]
+    style = "graph"
+
+[passes.tensorrt_int8]
+    by = "type"
+    num_calibration_batches = 10
+    post_calibration_analysis = true
+
+[passes.tensorrt_int8.default.config]
+    quantize = true
+    calibrators = ["percentile", "mse", "entropy"]
+    percentiles = [99.0, 99.9, 99.99]
+    precision = 'int8'  
+
+[passes.tensorrt_int8.runtime_analysis]
+    num_batches = 500
+    num_GPU_warmup_batches = 5
+    test = true
