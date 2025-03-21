@@ -15,7 +15,7 @@ vagrant/.vagrant/
 /mase_output/
 .devcontainer/
 *.ckpt
-!/docs/tutorials/tensorrt/checkpoints/*.ckpt
+!/docs/tutorials/proj/model/**/*.ckpt
 *.pkl
 /src/examples/**/cache/
 /src/examples/**/ckpts/
@@ -163,7 +163,7 @@ prof/
 
 # Quantization summaries
 *.csv
-
+!/docs/tutorials/proj/*.csv
 # HuggingFace trainer cache
 mase-trainer/
 test-trainer/
