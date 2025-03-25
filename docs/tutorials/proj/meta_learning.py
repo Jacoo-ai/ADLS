@@ -19,9 +19,6 @@ model_le = LabelEncoder()
 batch_le = LabelEncoder()
 quant_le = LabelEncoder()
 
-import seaborn as sns
-import matplotlib.pyplot as plt
-
 
 df["model_label"] = model_le.fit_transform(df["model_name"])
 df["batch_label"] = batch_le.fit_transform(df["batch_size"])
