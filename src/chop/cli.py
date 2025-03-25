@@ -250,8 +250,6 @@ class ChopCLI:
         match self.args.action:
             case "transform":
                 run_action_fn = self._run_transform
-            case "transnew":
-                run_action_fn = self._run_transnew
             case "meta":
                 run_action_fn = self._run_meta
             case "train":
@@ -388,30 +386,6 @@ class ChopCLI:
             "accelerator": self.args.accelerator,
         }
         transform(**transform_params)
-        self.logger.info("Transformation is completed")
-
-    def _run_transnew(self):
-        # A configuration is compulsory for transformation passes
-        if self.args.config is None:
-            raise ValueError("expected configuration via --config, got None")
-
-        self.logger.info(f"Transforming model {self.args.model!r}...")
-        self.data_module.prepare_data()
-        self.data_module.setup()
-
-        transform_params = {
-            "model": self.model,
-            "model_info": self.model_info,
-            "model_name": self.args.model,
-            "data_module": self.data_module,
-            "task": self.args.task,
-            "config": self.args.config,
-            "save_dir": os.path.join(self.output_dir_sw, "transform"),
-            "load_name": self.args.load_name,
-            "load_type": self.args.load_type,
-            "accelerator": self.args.accelerator,
-        }
-        transnew(**transform_params)
         self.logger.info("Transformation is completed")
 
     def _run_meta(self):
@@ -574,7 +548,7 @@ class ChopCLI:
         general_group.add_argument(
             "--load",
             dest="load_name",
-            type=str,  # 改为普通字符串类型，不做文件/目录存在性检查
+            type=str,
             help="path to load the model from (if not using a HuggingFace model, this must be an existing file or directory). (default: %(default)s)",
             metavar="PATH",
         )        

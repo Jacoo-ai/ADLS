@@ -172,7 +172,7 @@ else:
                     else:
                         pass
 
-            # 如果默认精度不是 int8，则设置其他标志（例如 FP16）
+            # If the default precision is not INT8, set alternative flags (e.g., FP16).
             if default_precision != "int8":
                 config.set_flag(trt.BuilderFlag.PREFER_PRECISION_CONSTRAINTS)
                 config.set_flag(trt.BuilderFlag.DIRECT_IO)
@@ -184,7 +184,7 @@ else:
             if default_precision == "fp16" and not layer_wise_mixed_precision:
                 config.set_flag(trt.BuilderFlag.FP16)
             elif layer_wise_mixed_precision:
-                # 如果启用了按层混合精度，按照配置逐层设置
+                # If layer-wise mixed precision is enabled, set it layer by layer according to the configuration.
                 for idx in range(network.num_layers):
                     layer = network.get_layer(idx)
                     layer_key = f"feature_layers_{idx}"

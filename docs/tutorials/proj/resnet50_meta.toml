@@ -1,6 +1,4 @@
-# ========================================================
-# 基础设置
-# ========================================================
+# basics
 model = "resnet50"
 dataset = "cifar10"
 
@@ -21,9 +19,7 @@ passes = [
     "tensorrt_fp32",
 ]
 
-# ========================================================
 # 1) INT8 
-# ========================================================
 [passes.tensorrt_int8]
 type = "tensorrt_int8"
 by = "type"
@@ -53,9 +49,8 @@ post_calibration_analysis = true
         num_GPU_warmup_batches = 10
         test = true
 
-# ========================================================
-# 2) INT8 + 2:4稀疏 + 测速
-# ========================================================
+
+# 2) INT8 + sparsity + evaluation
 [passes.sparsity_int8]
 type = "sparsity_int8"
 by = "type"
@@ -86,9 +81,7 @@ post_calibration_analysis = true
         test = true
 
 
-# ========================================================
 # 3) FP16
-# ========================================================
 [passes.tensorrt_fp16]
 type = "tensorrt_fp16"
 by = "type"
@@ -115,9 +108,7 @@ post_calibration_analysis = false
         num_GPU_warmup_batches = 10
         test = true
 
-# ========================================================
-# 4) FP16 + 2:4稀疏 
-# ========================================================
+# 4) FP16 + sparsity
 [passes.sparsity_fp16]
 type = "sparsity_fp16"
 by = "type"
@@ -144,9 +135,8 @@ post_calibration_analysis = false
     num_GPU_warmup_batches = 10
     test = true
 
-# ========================================================
+
 # 5) FP32 
-# ========================================================
 [passes.tensorrt_fp32]
 type = "tensorrt_fp32"
 by = "type"

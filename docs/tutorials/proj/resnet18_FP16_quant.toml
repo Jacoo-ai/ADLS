@@ -1,26 +1,29 @@
 # basics
-model = "resnet18"
-dataset = "cifar10"
+model = "resnet18"            
+dataset = "cifar10"           
 
-max_epochs = 10
-batch_size = 64
-learning_rate = 1e-3
-accelerator = "gpu"
-task = "cls"
+max_epochs = 10               
+batch_size = 64               
+learning_rate = 1e-3          
+accelerator = "gpu"          
+task = "cls"                 
+
+# num_workers = 0            # Set if memory issues occur
+
 
 [transform]
-    style = "graph"
+    style = "graph"           
 
 [passes.tensorrt_fp16]
-    by = "type"
-    num_calibration_batches = 0
-    post_calibration_analysis = false
+    by = "type"                     
+    num_calibration_batches = 0      # No INT8 calibration
+    post_calibration_analysis = false  # Skip analysis
 
 [passes.tensorrt_fp16.default.config]
-    quantize = false
-    precision = 'fp16'
+    quantize = true         
+    precision = 'fp16'   
 
 [passes.tensorrt_fp16.runtime_analysis]
     num_batches = 500
-    num_GPU_warmup_batches = 5
-    test = true
+    num_GPU_warmup_batches = 5    
+    test = true                   

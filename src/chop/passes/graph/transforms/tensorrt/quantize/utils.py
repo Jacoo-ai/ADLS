@@ -344,8 +344,8 @@ class FakeQuantizer:
 
 class Int8Calibrator(trt.IInt8EntropyCalibrator2):
     """
-    修改后的 Calibrator：每次都不读取任何历史 cache，也不写任何 cache 文件
-    从而实现“每次都重新计算校准”的效果，并在结束后不留下任何cache文件。
+    Modified Calibrator: disables both reading and writing of calibration cache.
+    Ensures that calibration is re-computed every time and no cache files are left behind.
     """
     def __init__(self, nCalibration, input_generator, cache_file_path):
         trt.IInt8EntropyCalibrator2.__init__(self)
@@ -376,30 +376,18 @@ class Int8Calibrator(trt.IInt8EntropyCalibrator2):
         except StopIteration:
             return None
 
-    # def read_calibration_cache(self):
-    #     if os.path.exists(self.cache_file):
-    #         print("Succeed finding cache file: %s" % (self.cache_file))
-    #         with open(self.cache_file, "rb") as f:
-    #             cache = f.read()
-    #             return cache
-    #     else:
-    #         print("Failed finding int8 cache!")
-    #         return None
-
     def read_calibration_cache(self):
         """
-        覆盖此方法，使其总是返回 None，
-        表示不读取任何已有缓存文件，强制重新校准
+        Override this method to always return None,
+        indicating no existing cache should be used and forcing re-calibration.
         """
         print("Skipping existing int8 cache (read_calibration_cache -> None).")
         return None
 
     def write_calibration_cache(self, cache):
-        # with open(self.cache_file, "wb") as f:
-        #     f.write(cache)
-        # print("Succeed saving int8 cache!")
         """
-        覆盖此方法，不实际写文件，这样每次都会重新算。
+        Override this method to skip writing the cache,
+        so calibration is re-computed each time.
         """
         print("Skipping writing int8 cache (write_calibration_cache does nothing).")
 
