@@ -7,6 +7,7 @@ batch_size = [8,16,32,64,128]
 learning_rate = 1e-3
 accelerator = "gpu"
 task = "cls"
+# num_workers = 0            # Set if memory issues occur
 
 [transform]
 style = "graph"

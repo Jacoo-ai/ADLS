@@ -162,8 +162,8 @@ prof/
 *.html
 
 # Quantization summaries
-*.csv
-!/docs/tutorials/proj/*.csv
+# *.csv
+# !/docs/tutorials/proj/*.csv
 
 # HuggingFace trainer cache
 mase-trainer/
