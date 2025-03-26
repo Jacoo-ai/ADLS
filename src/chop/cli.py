@@ -50,7 +50,7 @@ from tabulate import tabulate
 import torch
 
 from . import models
-from .actions import test, train, transform,transnew,transmeta, search, emit, simulate
+from .actions import test, train, transform,transmeta, search, emit, simulate
 from .dataset import MaseDataModule, AVAILABLE_DATASETS, get_dataset_info
 from .tools import post_parse_load_config, load_config
 

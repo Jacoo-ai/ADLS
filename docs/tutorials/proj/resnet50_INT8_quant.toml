@@ -1,5 +1,5 @@
 # basics
-model = "resnet18"
+model = "resnet50"
 dataset = "cifar10"
 
 max_epochs = 10
